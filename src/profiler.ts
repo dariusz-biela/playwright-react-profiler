@@ -219,9 +219,10 @@ export type LaunchProfilingContextOptions = LaunchPersistentContextOptions;
  */
 export async function launchProfilingContext(userDataDir: string, overrides: LaunchProfilingContextOptions = {}): Promise<BrowserContext> {
     const extensionDir = resolveExtensionDir();
-    const {args: overrideArgs, ignoreHTTPSErrors, ...rest} = overrides;
+    const {args: overrideArgs, ignoreHTTPSErrors, channel, ...rest} = overrides;
     const context = await chromium.launchPersistentContext(userDataDir, {
         ignoreHTTPSErrors: ignoreHTTPSErrors ?? true,
+        channel: channel ?? 'chromium',
         args: [...RECOMMENDED_PROFILING_ARGS, ...getExtensionArgs(extensionDir), ...(overrideArgs ?? [])],
         ...rest,
     });

@@ -37,6 +37,7 @@ export const test = base.extend<ProfilerFixtures>({
     context: async ({}, use) => {
         const extensionDir = resolveExtensionDir();
         const context = await chromium.launchPersistentContext('', {
+            channel: 'chromium',
             args: [...RECOMMENDED_PROFILING_ARGS, ...getExtensionArgs(extensionDir)],
         });
         await use(context);
