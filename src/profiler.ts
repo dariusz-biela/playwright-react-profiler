@@ -28,9 +28,6 @@ const DEFAULT_CONFIG: Required<ProfilerConfig> = {
 
 /**
  * Resolve the path to the React DevTools extension directory.
- *
- * The extension contains the real DevTools Store + ProfilerStore pipeline,
- * loaded as content scripts via Chrome's --load-extension flag.
  */
 export function resolveExtensionDir(): string {
     const localExt = path.resolve(__dirname, '..', 'devtools-extension');
@@ -147,7 +144,6 @@ export type LaunchProfilingContextOptions = LaunchPersistentContextOptions;
 
 /**
  * Launch a persistent Chromium context with the React DevTools extension.
- *
  * Uses channel: 'chromium' (system Chrome) for headless extension support.
  */
 export async function launchProfilingContext(userDataDir: string, overrides: LaunchProfilingContextOptions = {}): Promise<BrowserContext> {
