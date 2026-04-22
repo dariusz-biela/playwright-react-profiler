@@ -12,10 +12,6 @@ type LaunchPersistentContextOptions = NonNullable<Parameters<typeof chromium.lau
  * renderer when the window is not focused. That distorts wall-clock measurements
  * and changes React's scheduling behavior — the profile you capture no longer
  * reflects what a user would experience.
- *
- * The default `test` fixture applies these automatically via `launchOptions`.
- * For custom launch paths (e.g. `chromium.launchPersistentContext`), spread
- * them into your `args` — or use `launchProfilingContext`, which does it for you.
  */
 export const RECOMMENDED_PROFILING_ARGS: readonly string[] = [
     '--disable-background-timer-throttling',
@@ -31,134 +27,38 @@ const DEFAULT_CONFIG: Required<ProfilerConfig> = {
     recordChangeDescriptions: true,
 };
 
-export function resolveDevToolsBuildDir(): string {
-    // Check local devtools-build first
-    const localBuild = path.resolve(__dirname, '..', 'devtools-build');
-    if (fs.existsSync(path.join(localBuild, 'installHook.js'))) {
-        return localBuild;
-    }
-
-    // Check react-source submodule build output
-    const submoduleBuild = path.resolve(
-        __dirname,
-        '..',
-        'react-source',
-        'packages',
-        'react-devtools-extensions',
-        'chrome',
-        'build',
-        'unpacked',
-        'build'
-    );
-    if (fs.existsSync(path.join(submoduleBuild, 'installHook.js'))) {
-        return submoduleBuild;
+/**
+ * Resolve the path to the React DevTools extension directory.
+ *
+ * The extension is loaded via Chrome's `--load-extension` flag and contains:
+ *   - installHook.js — installs __REACT_DEVTOOLS_GLOBAL_HOOK__ before React loads
+ *   - react_devtools_backend_compact.js — registers the DevTools backend
+ *   - profiler-bridge.js — auto-activates backend and exposes profiling API
+ */
+export function resolveExtensionDir(): string {
+    const localExt = path.resolve(__dirname, '..', 'devtools-extension');
+    if (fs.existsSync(path.join(localExt, 'manifest.json'))) {
+        return localExt;
     }
 
     throw new Error(
-        'React DevTools build not found. Run: npm run build-devtools\n' +
-            'Or place installHook.js + react_devtools_backend_compact.js in devtools-build/'
+        'React DevTools extension not found.\n' +
+            'Run: npm run build-devtools\n' +
+            'Or place extension files in devtools-extension/',
     );
 }
 
-export function getInstallHookCode(): string {
-    const buildDir = resolveDevToolsBuildDir();
-    return fs.readFileSync(path.join(buildDir, 'installHook.js'), 'utf-8');
+function getExtensionArgs(extensionDir: string): string[] {
+    return [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`];
 }
 
-function getBackendCode(): string {
-    const buildDir = resolveDevToolsBuildDir();
-    return fs.readFileSync(path.join(buildDir, 'react_devtools_backend_compact.js'), 'utf-8');
-}
-
-async function activateBackend(page: Page): Promise<boolean> {
-    const backendCode = getBackendCode();
-    await page.evaluate(backendCode);
-
-    return page.evaluate(() => {
-        const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
-        if (!hook) return false;
-
-        const backend = hook.backends.get('compact');
-        if (!backend) return false;
-
-        const {Agent, Bridge, initBackend} = backend;
-        const operationsLog: Array<Array<number>> = [];
-
-        const bridge = new Bridge({
-            listen() {
-                return () => {};
-            },
-            send(event: string, payload: any) {
-                if (event === 'operations') {
-                    operationsLog.push(Array.from(payload));
-                }
-            },
-        });
-
-        const agent = new Agent(bridge, false, () => {});
-        initBackend(hook, agent, window, false);
-
-        (window as any).__PROFILER_AGENT__ = {
-            agent,
-            operationsLog,
-
-            startProfiling(recordChangeDescriptions = true) {
-                operationsLog.length = 0;
-                for (const rendererID in agent.rendererInterfaces) {
-                    const renderer = agent.rendererInterfaces[rendererID];
-                    renderer.startProfiling(recordChangeDescriptions, false);
-                }
-            },
-
-            stopProfiling() {
-                for (const rendererID in agent.rendererInterfaces) {
-                    const renderer = agent.rendererInterfaces[rendererID];
-                    renderer.stopProfiling();
-                }
-            },
-
-            getRendererCount() {
-                return Object.keys(agent.rendererInterfaces).length;
-            },
-
-            exportProfile() {
-                const dataForRoots: any[] = [];
-
-                for (const rendererID in agent.rendererInterfaces) {
-                    const renderer = agent.rendererInterfaces[rendererID];
-                    let profilingData: any;
-                    try {
-                        profilingData = renderer.getProfilingData();
-                    } catch {
-                        continue;
-                    }
-
-                    for (const rootData of profilingData.dataForRoots) {
-                        dataForRoots.push({
-                            commitData: rootData.commitData,
-                            displayName: rootData.displayName,
-                            initialTreeBaseDurations: rootData.initialTreeBaseDurations,
-                            operations: operationsLog.slice(),
-                            rootID: rootData.rootID,
-                            snapshots: [],
-                        });
-                    }
-                }
-
-                return {version: 5, dataForRoots, timelineData: []};
-            },
-        };
-
-        return true;
-    });
-}
-
-async function waitForBackendReady(page: Page, timeoutMs = 10000): Promise<boolean> {
+async function waitForProfilerReady(page: Page, timeoutMs = 10000): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         const ready = await page.evaluate(() => {
-            const ctrl = (window as any).__PROFILER_AGENT__;
-            return ctrl && ctrl.getRendererCount() > 0;
+            const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+            if (!hook || !hook.__profilerAgent__) return false;
+            return Object.keys(hook.__profilerAgent__.rendererInterfaces).length > 0;
         });
         if (ready) return true;
         await page.waitForTimeout(200);
@@ -172,25 +72,47 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
 
     return {
         async start(): Promise<void> {
-            // Always check — page context resets after navigation
-            const agentExists = await page.evaluate(() => !!(window as any).__PROFILER_AGENT__);
-            if (!agentExists) {
-                const ok = await activateBackend(page);
-                if (!ok) throw new Error('Failed to activate React DevTools backend');
-                const ready = await waitForBackendReady(page);
-                if (!ready) throw new Error('No React renderer found');
-            }
+            const ready = await waitForProfilerReady(page);
+            if (!ready) throw new Error('React DevTools profiler not ready — no renderer found');
 
             await page.evaluate((recordChanges) => {
-                (window as any).__PROFILER_AGENT__.startProfiling(recordChanges);
+                const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+                const agent = hook.__profilerAgent__;
+                for (const rendererID in agent.rendererInterfaces) {
+                    agent.rendererInterfaces[rendererID].startProfiling(recordChanges, false);
+                }
             }, cfg.recordChangeDescriptions);
         },
 
         async stop(): Promise<ProfileExport | null> {
-            await page.evaluate(() => {
-                (window as any).__PROFILER_AGENT__.stopProfiling();
+            return page.evaluate(() => {
+                const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+                const agent = hook?.__profilerAgent__;
+                if (!agent) return null;
+
+                const dataForRoots: any[] = [];
+                for (const rendererID in agent.rendererInterfaces) {
+                    const renderer = agent.rendererInterfaces[rendererID];
+                    renderer.stopProfiling();
+                    let profilingData: any;
+                    try {
+                        profilingData = renderer.getProfilingData();
+                    } catch {
+                        continue;
+                    }
+                    for (const rootData of profilingData.dataForRoots) {
+                        dataForRoots.push({
+                            commitData: rootData.commitData,
+                            displayName: rootData.displayName,
+                            initialTreeBaseDurations: rootData.initialTreeBaseDurations,
+                            operations: rootData.operations ?? [],
+                            rootID: rootData.rootID,
+                            snapshots: [],
+                        });
+                    }
+                }
+                return {version: 5 as const, dataForRoots, timelineData: []};
             });
-            return this.exportProfile();
         },
 
         async waitForStable(): Promise<void> {
@@ -206,8 +128,11 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
                     clearTimeout(deadlineTimer);
                     clearTimeout(timer);
                     page.evaluate(() => {
-                        const ctrl = (window as any).__PROFILER_AGENT__;
-                        ctrl?.__restoreOpsLog?.();
+                        const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+                        if (hook?.__restoreOnCommitFiberRoot__) {
+                            hook.__restoreOnCommitFiberRoot__();
+                            delete hook.__restoreOnCommitFiberRoot__;
+                        }
                     }).catch(() => {});
                     resolve();
                 };
@@ -222,21 +147,19 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
                 page.exposeFunction(cbName, onCommit)
                     .then(() =>
                         page.evaluate((name) => {
-                            const ctrl = (window as any).__PROFILER_AGENT__;
-                            if (!ctrl) return;
-                            const origPush = ctrl.operationsLog.push.bind(ctrl.operationsLog);
-                            ctrl.operationsLog.push = (...args: any[]) => {
-                                const result = origPush(...args);
+                            const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+                            if (!hook) return;
+                            const origFn = hook.onCommitFiberRoot;
+                            hook.onCommitFiberRoot = function (...args: any[]) {
+                                if (origFn) origFn.apply(hook, args);
                                 (window as any)[name]();
-                                return result;
                             };
-                            ctrl.__restoreOpsLog = () => {
-                                ctrl.operationsLog.push = origPush;
+                            hook.__restoreOnCommitFiberRoot__ = () => {
+                                hook.onCommitFiberRoot = origFn;
                             };
                         }, cbName),
                     )
                     .then(() => {
-                        // Start initial stability timer — if no commits arrive, resolve after threshold
                         timer = setTimeout(done, cfg.stableThresholdMs);
                     })
                     .catch(reject);
@@ -245,16 +168,39 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
 
         async isReady(): Promise<boolean> {
             return page.evaluate(() => {
-                const ctrl = (window as any).__PROFILER_AGENT__;
-                return !!(ctrl && ctrl.getRendererCount() > 0);
+                const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+                if (!hook || !hook.__profilerAgent__) return false;
+                return Object.keys(hook.__profilerAgent__.rendererInterfaces).length > 0;
             });
         },
 
         async exportProfile(): Promise<ProfileExport | null> {
             return page.evaluate(() => {
-                const ctrl = (window as any).__PROFILER_AGENT__;
-                if (!ctrl) return null;
-                return ctrl.exportProfile();
+                const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+                const agent = hook?.__profilerAgent__;
+                if (!agent) return null;
+
+                const dataForRoots: any[] = [];
+                for (const rendererID in agent.rendererInterfaces) {
+                    const renderer = agent.rendererInterfaces[rendererID];
+                    let profilingData: any;
+                    try {
+                        profilingData = renderer.getProfilingData();
+                    } catch {
+                        continue;
+                    }
+                    for (const rootData of profilingData.dataForRoots) {
+                        dataForRoots.push({
+                            commitData: rootData.commitData,
+                            displayName: rootData.displayName,
+                            initialTreeBaseDurations: rootData.initialTreeBaseDurations,
+                            operations: rootData.operations ?? [],
+                            rootID: rootData.rootID,
+                            snapshots: [],
+                        });
+                    }
+                }
+                return {version: 5 as const, dataForRoots, timelineData: []};
             });
         },
     };
@@ -265,25 +211,20 @@ export type LaunchProfilingContextOptions = LaunchPersistentContextOptions;
 /**
  * Launch a persistent Chromium context wired for React profiling.
  *
- * Convenience wrapper around `chromium.launchPersistentContext` that:
- *   1. Merges `RECOMMENDED_PROFILING_ARGS` into `args` (required for accurate timings).
- *   2. Defaults `ignoreHTTPSErrors: true` (dev servers commonly use self-signed certs).
- *   3. Installs the React DevTools hook via `addInitScript` before any page loads.
+ * Loads the React DevTools extension via Chrome's --load-extension flag,
+ * which runs hook installation and backend activation as content scripts
+ * (off the page's main JS thread for setup, minimal main-thread footprint).
  *
- * Use this when you need a persistent browser profile (saved auth, cookies, etc.).
- * For standard test runs without persistence, the default `test` fixture already
- * applies the recommended args automatically — no helper needed.
+ * Also applies RECOMMENDED_PROFILING_ARGS to prevent timer throttling.
  */
 export async function launchProfilingContext(userDataDir: string, overrides: LaunchProfilingContextOptions = {}): Promise<BrowserContext> {
+    const extensionDir = resolveExtensionDir();
     const {args: overrideArgs, ignoreHTTPSErrors, ...rest} = overrides;
     const context = await chromium.launchPersistentContext(userDataDir, {
         ignoreHTTPSErrors: ignoreHTTPSErrors ?? true,
-        args: [...RECOMMENDED_PROFILING_ARGS, ...(overrideArgs ?? [])],
+        args: [...RECOMMENDED_PROFILING_ARGS, ...getExtensionArgs(extensionDir), ...(overrideArgs ?? [])],
         ...rest,
     });
-
-    const hookCode = getInstallHookCode();
-    await context.addInitScript(hookCode);
 
     return context;
 }

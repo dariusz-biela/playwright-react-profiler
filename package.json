@@ -20,7 +20,7 @@
   },
   "files": [
     "dist",
-    "devtools-build",
+    "devtools-extension",
     "scripts",
     "README.md",
     "LICENSE"

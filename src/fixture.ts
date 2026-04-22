@@ -1,6 +1,5 @@
-import {test as base, BrowserContext} from '@playwright/test';
-import type {LaunchOptions} from '@playwright/test';
-import {createProfiler, getInstallHookCode, RECOMMENDED_PROFILING_ARGS} from './profiler';
+import {test as base, chromium, BrowserContext} from '@playwright/test';
+import {createProfiler, resolveExtensionDir, RECOMMENDED_PROFILING_ARGS} from './profiler';
 import {ProfilerConfig, ReactProfiler} from './types';
 
 export type ProfilerFixtures = {
@@ -8,14 +7,19 @@ export type ProfilerFixtures = {
     profilerConfig: ProfilerConfig;
 };
 
+function getExtensionArgs(extensionDir: string): string[] {
+    return [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`];
+}
+
 /**
  * Extended Playwright test with React profiler fixture.
  *
- * The `context` fixture is overridden to auto-inject the React DevTools hook
- * via `addInitScript` before any page loads. This is required because
- * `installHook.js` must run before React initializes; otherwise React will
- * not register with `__REACT_DEVTOOLS_GLOBAL_HOOK__` and profiling will fail
- * with "No React renderer found".
+ * Launches a persistent Chromium context with the React DevTools extension
+ * loaded via --load-extension. The extension installs the DevTools hook and
+ * activates the backend as content scripts — no manual addInitScript needed.
+ *
+ * Chrome extensions require a persistent context, so the `context` fixture
+ * is overridden to use `chromium.launchPersistentContext`.
  *
  * Usage:
  *   import { test } from 'playwright-react-profiler';
@@ -27,27 +31,16 @@ export type ProfilerFixtures = {
  *     const profile = await profiler.stop();
  *   });
  */
-export const test = base.extend<ProfilerFixtures, {launchOptions: LaunchOptions}>({
+export const test = base.extend<ProfilerFixtures>({
     profilerConfig: [{}, {option: true}],
 
-    // Merge RECOMMENDED_PROFILING_ARGS into launchOptions at the worker scope.
-    // Without these Chrome flags, background-tab throttling distorts timings and
-    // React scheduling. Any user-provided launchOptions.args still take effect.
-    launchOptions: [
-        async ({launchOptions}, use) => {
-            const existingArgs = launchOptions?.args ?? [];
-            const merged: LaunchOptions = {
-                ...launchOptions,
-                args: [...RECOMMENDED_PROFILING_ARGS, ...existingArgs],
-            };
-            await use(merged);
-        },
-        {scope: 'worker'},
-    ],
-
-    context: async ({context}, use) => {
-        await injectDevToolsHook(context);
+    context: async ({}, use) => {
+        const extensionDir = resolveExtensionDir();
+        const context = await chromium.launchPersistentContext('', {
+            args: [...RECOMMENDED_PROFILING_ARGS, ...getExtensionArgs(extensionDir)],
+        });
         await use(context);
+        await context.close();
     },
 
     profiler: async ({page, profilerConfig}, use) => {
@@ -57,12 +50,3 @@ export const test = base.extend<ProfilerFixtures, {launchOptions: LaunchOptions}
 });
 
 export {expect} from '@playwright/test';
-
-/**
- * Creates a BrowserContext with React DevTools hook pre-installed.
- * Use this for custom context setups (persistent contexts, auth state, etc.)
- */
-export async function injectDevToolsHook(context: BrowserContext): Promise<void> {
-    const hookCode = getInstallHookCode();
-    await context.addInitScript(hookCode);
-}
