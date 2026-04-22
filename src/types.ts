@@ -16,13 +16,23 @@ export interface CommitData {
     updaters: Array<{id: number; displayName: string | null}> | null;
 }
 
+export interface SnapshotNode {
+    id: number;
+    children: number[];
+    displayName: string | null;
+    hocDisplayNames: string[] | null;
+    key: string | number | null;
+    type: number;
+    compiledWithForget: boolean;
+}
+
 export interface RootProfileData {
     commitData: CommitData[];
     displayName: string;
     initialTreeBaseDurations: Array<[number, number]>;
     operations: Array<Array<number>>;
     rootID: number;
-    snapshots: any[];
+    snapshots: Array<[number, SnapshotNode]>;
 }
 
 export interface ProfileExport {
@@ -39,15 +49,10 @@ export interface ProfileResult {
 }
 
 export interface ProfilerConfig {
-    /** Directory to store profiling results */
     resultsDir?: string;
-    /** How long to wait with no new operations before considering render stable (ms) */
     stableThresholdMs?: number;
-    /** How often to poll for stability (ms) */
     pollIntervalMs?: number;
-    /** Maximum wait time for render stability (ms) */
     maxWaitMs?: number;
-    /** Record change descriptions in profiling data */
     recordChangeDescriptions?: boolean;
 }
 

@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
   "name": "React Profiler Bridge",
-  "description": "Minimal React DevTools extension for automated profiling via Playwright",
-  "version": "1.0.0",
+  "description": "Real React DevTools profiling pipeline for headless Playwright automation",
+  "version": "2.0.0",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["installHook.js", "react_devtools_backend_compact.js", "profiler-bridge.js"],
+      "js": ["installHook.js", "headlessProfiler.js"],
       "run_at": "document_start",
       "world": "MAIN"
     }
