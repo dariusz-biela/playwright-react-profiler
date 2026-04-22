@@ -1,0 +1,40 @@
+{
+  "name": "playwright-react-profiler",
+  "version": "1.0.0",
+  "description": "Playwright extension for React DevTools profiling — headless and headed modes",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "build-devtools": "bash scripts/build-devtools.sh",
+    "setup": "npm run build-devtools && npm run build",
+    "analyze": "ts-node src/analyze.ts"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.30.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0"
+  },
+  "files": [
+    "dist",
+    "devtools-build",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "playwright",
+    "react",
+    "devtools",
+    "profiler",
+    "performance",
+    "benchmark"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/playwright-react-profiler"
+  }
+}

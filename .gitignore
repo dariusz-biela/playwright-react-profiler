@@ -1,0 +1,7 @@
+node_modules/
+dist/
+devtools-build/
+.browser-data/
+results/
+*.tsbuildinfo
+test-results/
