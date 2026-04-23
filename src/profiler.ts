@@ -45,7 +45,11 @@ function getExtensionArgs(extensionDir: string): string[] {
 async function waitForProfilerReady(page: Page, timeoutMs = 10000): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-        const ready = await page.evaluate(() => !!(window as any).__REACT_PROFILER__?.isReady());
+        const ready = await page.evaluate(async () => {
+            const profiler = (window as any).__REACT_PROFILER__;
+            if (!profiler) return false;
+            return profiler.isReady();
+        });
         if (ready) return true;
         await page.waitForTimeout(200);
     }
@@ -61,8 +65,8 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
             const ready = await waitForProfilerReady(page);
             if (!ready) throw new Error('React DevTools profiler not ready — no renderer found');
 
-            await page.evaluate((recordChanges) => {
-                (window as any).__REACT_PROFILER__.startProfiling(recordChanges);
+            await page.evaluate(async (recordChanges) => {
+                await (window as any).__REACT_PROFILER__.startProfiling(recordChanges);
             }, cfg.recordChangeDescriptions);
         },
 
@@ -127,11 +131,15 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
         },
 
         async isReady(): Promise<boolean> {
-            return page.evaluate(() => !!(window as any).__REACT_PROFILER__?.isReady());
+            return page.evaluate(async () => {
+                const profiler = (window as any).__REACT_PROFILER__;
+                if (!profiler) return false;
+                return profiler.isReady();
+            });
         },
 
         async exportProfile(): Promise<ProfileExport | null> {
-            return page.evaluate(() => {
+            return page.evaluate(async () => {
                 const profiler = (window as any).__REACT_PROFILER__;
                 if (!profiler) return null;
                 return profiler.exportProfilingData();

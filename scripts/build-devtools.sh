@@ -1,6 +1,12 @@
 #!/bin/bash
-# Builds React DevTools extension from react-source with the headless profiler entry point.
-# Output goes to devtools-extension/ directory as a loadable Chrome extension.
+# Builds React DevTools extension from react-source with the service worker architecture.
+#
+# Architecture (3 scripts):
+#   backend.js   — MAIN world content script (Agent, initBackend, Bridge)
+#   proxy.js     — ISOLATED world content script (window.postMessage ↔ chrome.runtime port)
+#   frontend.js  — Service worker (Store, ProfilerStore, prepareProfilingDataExport)
+#
+# Output goes to devtools-extension/ as a loadable Chrome extension.
 
 set -euo pipefail
 
@@ -17,19 +23,33 @@ if [ ! -d "$REACT_SOURCE/packages/react-devtools-extensions" ]; then
     exit 1
 fi
 
-# ── Copy our headless profiler entry point ──
-echo "Copying headlessProfiler.js entry point..."
-cp "$ROOT_DIR/src/headlessProfiler.js" "$EXTENSIONS_DIR/src/headlessProfiler.js" 2>/dev/null || true
+# ── Copy our entry points (prefixed names to avoid conflicts with existing entries) ──
+echo "Copying entry points..."
+cp "$ROOT_DIR/src/backend.js" "$EXTENSIONS_DIR/src/profilerBackend.js"
+cp "$ROOT_DIR/src/frontend.js" "$EXTENSIONS_DIR/src/profilerFrontend.js"
 
-# ── Patch webpack config to add headlessProfiler entry ──
+# ── Patch webpack config ──
 echo "Patching webpack config..."
 WEBPACK_CONFIG="$EXTENSIONS_DIR/webpack.config.js"
-if ! grep -q "headlessProfiler" "$WEBPACK_CONFIG"; then
-    sed -i.bak "s|installHook: './src/contentScripts/installHook.js',|installHook: './src/contentScripts/installHook.js',\n    headlessProfiler: './src/headlessProfiler.js',|" "$WEBPACK_CONFIG"
+
+# Remove old entries if present (headlessProfiler, profilerBackend, profilerFrontend)
+sed -i.bak "/headlessProfiler/d; /profilerBackend/d; /profilerFrontend/d" "$WEBPACK_CONFIG"
+rm -f "$WEBPACK_CONFIG.bak"
+
+# Add profilerBackend + profilerFrontend entries
+if ! grep -q "profilerBackend" "$WEBPACK_CONFIG"; then
+    sed -i.bak "s|installHook: './src/contentScripts/installHook.js',|installHook: './src/contentScripts/installHook.js',\n    profilerBackend: './src/profilerBackend.js',\n    profilerFrontend: './src/profilerFrontend.js',|" "$WEBPACK_CONFIG"
     rm -f "$WEBPACK_CONFIG.bak"
-    echo "  Added headlessProfiler entry to webpack config"
+    echo "  Added profilerBackend + profilerFrontend entries"
 else
-    echo "  headlessProfiler entry already present"
+    echo "  profilerBackend/profilerFrontend entries already present"
+fi
+
+# Add filename mappings for our entries (output as backend.js / frontend.js)
+if ! grep -q "profilerBackend" "$WEBPACK_CONFIG" || ! grep -qF "case 'profilerBackend'" "$WEBPACK_CONFIG"; then
+    sed -i.bak "s|case 'backend':|case 'profilerBackend':\n          return 'backend.js';\n        case 'profilerFrontend':\n          return 'frontend.js';\n        case 'backend':|" "$WEBPACK_CONFIG"
+    rm -f "$WEBPACK_CONFIG.bak"
+    echo "  Added output filename mappings"
 fi
 
 # ── Install dependencies in react-source root ──
@@ -64,7 +84,12 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 cp "$CHROME_BUILD/installHook.js" "$OUTPUT_DIR/"
-cp "$CHROME_BUILD/headlessProfiler.js" "$OUTPUT_DIR/"
+cp "$CHROME_BUILD/backend.js" "$OUTPUT_DIR/"
+cp "$CHROME_BUILD/frontend.js" "$OUTPUT_DIR/"
+# proxy.js is plain JS, already committed in devtools-extension/ — no build needed
+
+# Clean up old artifacts
+rm -f "$OUTPUT_DIR/headlessProfiler.js"
 
 echo ""
 echo "DevTools extension build complete: $OUTPUT_DIR/"
