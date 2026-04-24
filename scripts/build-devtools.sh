@@ -93,8 +93,38 @@ cp "$CHROME_BUILD/backend.js" "$OUTPUT_DIR/"
 cp "$CHROME_BUILD/frontend.js" "$OUTPUT_DIR/"
 # proxy.js is plain JS, already committed in devtools-extension/ — no build needed
 
-# Clean up old artifacts
-rm -f "$OUTPUT_DIR/headlessProfiler.js"
+# ── Generate LICENSE from react-source ──
+REACT_LICENSE="$REACT_SOURCE/LICENSE"
+if [ -f "$REACT_LICENSE" ]; then
+    {
+        echo "The files installHook.js, backend.js, and frontend.js in this directory"
+        echo "are built from facebook/react (https://github.com/facebook/react) and"
+        echo "contain code subject to the following license:"
+        echo ""
+        cat "$REACT_LICENSE"
+    } > "$OUTPUT_DIR/LICENSE"
+    echo "  Generated devtools-extension/LICENSE from react-source/LICENSE"
+else
+    echo "  WARNING: react-source/LICENSE not found, keeping existing devtools-extension/LICENSE"
+fi
+
+# ── Prepend license header to built files ──
+# Extract copyright line from react-source LICENSE for the header
+COPYRIGHT_LINE=$(grep -m1 "^Copyright" "$REACT_LICENSE" 2>/dev/null || echo "Copyright (c) Meta Platforms, Inc. and affiliates.")
+LICENSE_HEADER="/**
+ * Built from facebook/react (https://github.com/facebook/react)
+ * $COPYRIGHT_LINE
+ * Licensed under the MIT License. See devtools-extension/LICENSE for details.
+ */"
+
+for file in installHook.js backend.js frontend.js; do
+    TARGET="$OUTPUT_DIR/$file"
+    if [ -f "$TARGET" ] && ! head -1 "$TARGET" | grep -q "Built from facebook/react"; then
+        echo "$LICENSE_HEADER" | cat - "$TARGET" > "$TARGET.tmp"
+        mv "$TARGET.tmp" "$TARGET"
+        echo "  Added license header to $file"
+    fi
+done
 
 echo ""
 echo "DevTools extension build complete: $OUTPUT_DIR/"

@@ -1,3 +1,4 @@
 [submodule "react-source"]
 	path = react-source
 	url = https://github.com/facebook/react.git
+	update = none

@@ -26,32 +26,28 @@ Key benefits:
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/user/playwright-react-profiler.git
+git clone https://github.com/TODO/playwright-react-profiler.git
 cd playwright-react-profiler
 npm install
 ```
 
-### 2. Set up React source (one-time)
-
-```bash
-git clone --depth 1 https://github.com/facebook/react.git react-source
-```
-
-### 3. Build the DevTools extension
-
-```bash
-npm run build-devtools
-```
-
-This builds `installHook.js`, `backend.js`, and `frontend.js` from `react-source` into `devtools-extension/`. The extension is loaded via Chrome's `--load-extension` flag.
-
-### 4. Build the library
+### 2. Build the library
 
 ```bash
 npm run build
 ```
 
-### 5. Use in your project
+The DevTools extension (`devtools-extension/`) ships pre-built — no extra setup needed.
+
+> **Rebuilding the extension (development only):**
+> If you need to modify the extension source (`src/backend.js`, `src/frontend.js`) or upgrade to a newer React DevTools version:
+> ```bash
+> git clone --depth 1 https://github.com/facebook/react.git react-source
+> npm run build-devtools
+> ```
+> This rebuilds `installHook.js`, `backend.js`, and `frontend.js` from `react-source` into `devtools-extension/`.
+
+### 3. Use in your project
 
 ```json
 {
@@ -61,7 +57,7 @@ npm run build
 }
 ```
 
-### 6. Write a profiling test
+### 4. Write a profiling test
 
 ```typescript
 import {test, expect} from 'playwright-react-profiler';
@@ -78,7 +74,7 @@ test('profile page load', async ({page, profiler}) => {
 });
 ```
 
-### 7. Run
+### 5. Run
 
 ```bash
 # Headless
@@ -198,21 +194,23 @@ playwright-react-profiler/
 │   ├── profiler.ts       # Core profiling logic
 │   ├── analyze.ts        # Profile analysis utilities
 │   ├── types.ts          # TypeScript types
-│   ├── backend.js        # Extension: MAIN world (Agent, Bridge)
-│   ├── frontend.js       # Extension: service worker (Store, ProfilerStore)
-│   └── headlessProfiler.js  # Legacy single-thread version
-├── devtools-extension/   # Built Chrome extension
+│   ├── backend.js        # Extension source: MAIN world (Agent, Bridge)
+│   └── frontend.js       # Extension source: service worker (Store, ProfilerStore)
+├── devtools-extension/   # Pre-built Chrome extension (committed)
 │   ├── manifest.json     # Manifest V3 with service worker
 │   ├── proxy.js          # ISOLATED world relay (plain JS)
-│   ├── installHook.js    # Built from react-source (gitignored)
-│   ├── backend.js        # Built from react-source (gitignored)
-│   └── frontend.js       # Built from react-source (gitignored)
-├── react-source/         # Git submodule (facebook/react)
+│   ├── installHook.js    # Built from react-source (MIT, Meta)
+│   ├── backend.js        # Built from react-source (MIT, Meta)
+│   ├── frontend.js       # Built from react-source (MIT, Meta)
+│   └── LICENSE           # Meta/React MIT license for built files
+├── react-source/         # Git submodule (facebook/react) — dev only
 ├── scripts/
-│   └── build-devtools.sh # Builds extension from react-source
+│   └── build-devtools.sh # Rebuilds extension from react-source
 └── dist/                 # Compiled TypeScript output
 ```
 
 ## License
 
 MIT
+
+The pre-built DevTools extension files (`devtools-extension/installHook.js`, `backend.js`, `frontend.js`) contain code from [facebook/react](https://github.com/facebook/react), licensed under MIT by Meta Platforms, Inc. See `devtools-extension/LICENSE` for details.
