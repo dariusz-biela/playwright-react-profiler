@@ -151,10 +151,10 @@ chrome.runtime.onConnect.addListener((port) => {
           const allFiberIds = new Set();
 
           rootData.commitData.forEach((commit) => {
-            commit.fiberActualDurations.forEach((dur, fiberId) =>
+            commit.fiberActualDurations.forEach(([fiberId]) =>
               allFiberIds.add(fiberId),
             );
-            commit.fiberSelfDurations.forEach((dur, fiberId) =>
+            commit.fiberSelfDurations.forEach(([fiberId]) =>
               allFiberIds.add(fiberId),
             );
           });

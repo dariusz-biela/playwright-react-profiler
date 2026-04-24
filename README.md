@@ -172,6 +172,52 @@ console.log(formatAnalysis(analysis));
 
 6. **Stability detection** — Monitors `onCommitFiberRoot` hook. When no new commits arrive for `stableThresholdMs`, rendering is considered stable.
 
+## Running Multiple Iterations
+
+There are two ways to run a profiling test multiple times. Each has trade-offs.
+
+### Option A: `--repeat-each` (separate browser per iteration)
+
+Playwright launches a fresh browser context for each repeat. Every iteration goes through full setup: navigation, app hydration, warm-up cycle.
+
+```bash
+npx playwright test my-profile-test --repeat-each=20
+```
+
+**Pros:**
+- More stable and realistic timings — each iteration starts from a clean state
+- No accumulated side effects between iterations (memory pressure, state store growth)
+- Closer to what a real user experiences on each page visit
+
+**Cons:**
+- Significantly slower — browser launch + navigation + warm-up overhead per iteration (e.g. ~9s per iteration vs ~2s)
+- Requires shared-folder logic to accumulate results across independent test runs
+
+### Option B: Internal loop (single browser, multiple measurements)
+
+A `for` loop inside one test case. Browser stays open, app stays loaded.
+
+```typescript
+for (let i = 1; i <= ITERATIONS; i++) {
+    await profiler.start();
+    // ... trigger interaction ...
+    await profiler.waitForStable();
+    const profile = await profiler.stop();
+}
+```
+
+**Pros:**
+- Much faster — no browser/navigation overhead between iterations
+- Simpler result collection — all profiles available in one array
+
+**Cons:**
+- Later iterations tend to be faster due to V8 JIT compiler optimizations — the JS engine progressively optimizes hot code paths, so iteration 10 may be measurably faster than iteration 1
+- Accumulated state (cached data, DOM nodes, memory) can drift from realistic conditions
+
+### Recommendation
+
+Use **`--repeat-each`** when you need accurate absolute numbers (regression detection, before/after comparison). Use **internal loop** when you need fast relative comparison and can tolerate JIT bias (e.g. comparing two code paths in the same run).
+
 ## Performance
 
 `recordChangeDescriptions` is intentionally disabled. It causes ~10s overhead on large apps (19k+ fibers) by diffing props/state for every component on each commit. Without it, profiler overhead is ~270ms and commit batching patterns closely match manual DevTools profiling.
