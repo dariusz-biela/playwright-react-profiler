@@ -19,9 +19,7 @@ export const RECOMMENDED_PROFILING_ARGS: readonly string[] = [
 ];
 
 const DEFAULT_CONFIG: Required<ProfilerConfig> = {
-    resultsDir: './results',
     stableThresholdMs: 2000,
-    pollIntervalMs: 100,
     maxWaitMs: 30000,
 };
 

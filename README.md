@@ -42,7 +42,7 @@ The DevTools extension (`devtools-extension/`) ships pre-built — no extra setu
 > **Rebuilding the extension (development only):**
 > If you need to modify the extension source (`src/backend.js`, `src/frontend.js`) or upgrade to a newer React DevTools version:
 > ```bash
-> git clone --depth 1 https://github.com/facebook/react.git react-source
+> git submodule update --init react-source
 > npm run build-devtools
 > ```
 > This rebuilds `installHook.js`, `backend.js`, and `frontend.js` from `react-source` into `devtools-extension/`.
@@ -94,7 +94,6 @@ import {test} from 'playwright-react-profiler';
 test.use({
     profilerConfig: {
         stableThresholdMs: 2000, // ms with no new commits = stable
-        pollIntervalMs: 100,     // poll frequency
         maxWaitMs: 30000,        // max wait before timeout
     },
 });

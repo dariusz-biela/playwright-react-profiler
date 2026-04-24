@@ -49,9 +49,7 @@ export interface ProfileResult {
 }
 
 export interface ProfilerConfig {
-    resultsDir?: string;
     stableThresholdMs?: number;
-    pollIntervalMs?: number;
     maxWaitMs?: number;
 }
 
