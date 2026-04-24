@@ -1,17 +1,25 @@
 # playwright-react-profiler
 
-Playwright extension for automated React DevTools profiling. Captures React render profiles programmatically — headless or headed — in any React project. Outputs profiles importable directly into React DevTools.
+Playwright extension for automated React DevTools profiling. Captures React render profiles programmatically using the real DevTools pipeline — headless or headed. Outputs profiles importable directly into React DevTools.
 
-## Features
+## Architecture
 
-- **Zero app code changes** — injects React DevTools hook via Playwright's `addInitScript`
-- **Auto-injection** — default `test` fixture wires the hook into every browser context automatically
-- **Accurate timings** — required Chrome profiling flags (`--disable-*-throttling`) applied automatically
-- **Headless & headed** — works in both modes, no Chrome extension needed
-- **Playwright fixture** — drop-in `test` extension with `profiler` fixture
-- **DevTools-compatible output** — exported profiles open directly in React DevTools Profiler tab
-- **Configurable stability detection** — waits for React renders to settle before stopping
-- **Any React project** — no framework-specific dependencies
+Uses the same multi-process architecture as the real React DevTools extension:
+
+```
+MAIN world (page thread):     installHook.js + backend.js
+                               Agent, initBackend, Bridge via postMessage
+ISOLATED world (page thread):  proxy.js
+                               Relays postMessage <-> chrome.runtime port
+Service Worker (off thread):   frontend.js
+                               Store, ProfilerStore, prepareProfilingDataExport
+```
+
+Key benefits:
+- **Real DevTools pipeline** — Store + ProfilerStore produce identical export format as DevTools "Export" button
+- **Off-thread processing** — Store operations processing runs in a service worker, not on the page's main thread
+- **Shadow element map** — tracks all fiber elements (including unmounted) for complete name resolution
+- **Component filters** — host components (div, span, svg) filtered out, matching DevTools defaults
 
 ## Quick Start
 
@@ -20,42 +28,30 @@ Playwright extension for automated React DevTools profiling. Captures React rend
 ```bash
 git clone https://github.com/user/playwright-react-profiler.git
 cd playwright-react-profiler
-git submodule update --init --recursive
 npm install
 ```
 
-### 2. Build React DevTools (one-time)
+### 2. Set up React source (one-time)
+
+```bash
+git clone --depth 1 https://github.com/facebook/react.git react-source
+```
+
+### 3. Build the DevTools extension
 
 ```bash
 npm run build-devtools
 ```
 
-This builds `installHook.js` and `react_devtools_backend_compact.js` from the `react-source` submodule into `devtools-build/`.
+This builds `installHook.js`, `backend.js`, and `frontend.js` from `react-source` into `devtools-extension/`. The extension is loaded via Chrome's `--load-extension` flag.
 
-Alternatively, place pre-built files manually:
-
-```bash
-mkdir -p devtools-build
-cp /path/to/installHook.js devtools-build/
-cp /path/to/react_devtools_backend_compact.js devtools-build/
-```
-
-### 3. Build the library
+### 4. Build the library
 
 ```bash
 npm run build
 ```
 
-### 4. Use in your project
-
-From your project, reference the cloned repo as a local dependency:
-
-```bash
-# In your project's package.json
-npm install --save-dev /path/to/playwright-react-profiler
-```
-
-Or use a relative `file:` path in `package.json`:
+### 5. Use in your project
 
 ```json
 {
@@ -65,10 +61,9 @@ Or use a relative `file:` path in `package.json`:
 }
 ```
 
-### 5. Write a profiling test
+### 6. Write a profiling test
 
 ```typescript
-// profile.spec.ts
 import {test, expect} from 'playwright-react-profiler';
 import fs from 'fs';
 
@@ -83,7 +78,7 @@ test('profile page load', async ({page, profiler}) => {
 });
 ```
 
-### 6. Run
+### 7. Run
 
 ```bash
 # Headless
@@ -102,30 +97,10 @@ import {test} from 'playwright-react-profiler';
 
 test.use({
     profilerConfig: {
-        stableThresholdMs: 2000, // ms with no new operations = stable
+        stableThresholdMs: 2000, // ms with no new commits = stable
         pollIntervalMs: 100,     // poll frequency
         maxWaitMs: 30000,        // max wait before timeout
-        recordChangeDescriptions: true,
     },
-});
-```
-
-### Playwright config
-
-```typescript
-// playwright.config.ts
-import {defineConfig} from '@playwright/test';
-
-export default defineConfig({
-    timeout: 120_000,
-    use: {
-        baseURL: 'http://localhost:3000',
-        ignoreHTTPSErrors: true,
-    },
-    projects: [
-        {name: 'headless', use: {headless: true}},
-        {name: 'headed', use: {headless: false}},
-    ],
 });
 ```
 
@@ -133,27 +108,27 @@ export default defineConfig({
 
 ### `test` (extended Playwright test)
 
-Extends `@playwright/test` with a `profiler` fixture automatically available in every test.
+Extends `@playwright/test` with a `profiler` fixture. Launches a persistent Chromium context with the React DevTools extension loaded automatically.
 
 ### `profiler` fixture
 
 | Method | Description |
 |--------|-------------|
-| `profiler.start()` | Activate backend (if needed) and start recording |
-| `profiler.stop()` | Stop recording and return profile |
-| `profiler.waitForStable()` | Wait until no new React operations for `stableThresholdMs` |
-| `profiler.isReady()` | Check if backend is activated and renderer connected |
+| `profiler.start()` | Start profiling (waits for React renderer to be ready) |
+| `profiler.stop()` | Stop profiling and return profile export |
+| `profiler.waitForStable()` | Wait until no new React commits for `stableThresholdMs` |
+| `profiler.isReady()` | Check if React renderer is connected |
 | `profiler.exportProfile()` | Export current profile without stopping |
 
 ### `launchProfilingContext(userDataDir, overrides?)`
 
-Convenience wrapper around `chromium.launchPersistentContext` for setups with saved auth (or any pre-launched, persistent profile). Applies `RECOMMENDED_PROFILING_ARGS`, defaults `ignoreHTTPSErrors: true`, and injects the React DevTools hook in one call.
+Launch a persistent Chromium context with the DevTools extension and profiling flags. Use for setups with saved auth or custom browser configuration.
 
 ```typescript
 import {launchProfilingContext, createProfiler} from 'playwright-react-profiler';
 
-const context = await launchProfilingContext('./user-data', {
-    headless: false,
+const context = await launchProfilingContext('./.browser-data', {
+    headless: true,
     viewport: {width: 1440, height: 900},
 });
 
@@ -161,9 +136,13 @@ const page = context.pages()[0] ?? (await context.newPage());
 const profiler = createProfiler(page);
 ```
 
+### `createProfiler(page, config?)`
+
+Create a profiler instance for manual control outside the fixture system.
+
 ### `RECOMMENDED_PROFILING_ARGS`
 
-Chrome flags required for accurate profiling:
+Chrome flags applied automatically:
 
 ```
 --disable-background-timer-throttling
@@ -171,31 +150,7 @@ Chrome flags required for accurate profiling:
 --disable-renderer-backgrounding
 ```
 
-Without them, headless Chrome throttles renderer work in unfocused windows — wall-clock numbers drift and React scheduling changes. The default `test` fixture merges these into `launchOptions` automatically; `launchProfilingContext` merges them into persistent-context args. Only spread them into your own `launchOptions.args` if you are launching the browser outside both paths.
-
-### `injectDevToolsHook(context)`
-
-Low-level primitive: installs `installHook.js` on a `BrowserContext` via `addInitScript`. Both the default `test` fixture and `launchProfilingContext` call this internally. Use directly only when you construct a context through a path neither of those covers.
-
-```typescript
-import {chromium} from '@playwright/test';
-import {injectDevToolsHook, RECOMMENDED_PROFILING_ARGS, createProfiler} from 'playwright-react-profiler';
-
-const context = await chromium.launchPersistentContext('./user-data', {
-    headless: false,
-    args: [...RECOMMENDED_PROFILING_ARGS],
-});
-await injectDevToolsHook(context);
-
-const page = context.pages()[0];
-const profiler = createProfiler(page);
-```
-
-> **Why this matters:** `installHook.js` must run before React initializes. It is added via `context.addInitScript`, which only applies to pages created from that context after the script is registered. If you create a context manually and skip this step, React will never attach to `__REACT_DEVTOOLS_GLOBAL_HOOK__` and `profiler.start()` will fail with `No React renderer found`.
-
-### `createProfiler(page, config?)`
-
-Create a profiler instance for manual control outside the fixture system.
+Without these, headless Chrome throttles renderer work in unfocused windows, distorting timings and React scheduling.
 
 ### `analyzeResults(profiles, wallClockTimes?)`
 
@@ -210,37 +165,52 @@ console.log(formatAnalysis(analysis));
 
 ## How It Works
 
-1. **Hook injection** — Before React loads, `installHook.js` is injected via `addInitScript`. This installs `__REACT_DEVTOOLS_GLOBAL_HOOK__` which React connects to during initialization.
+1. **Extension loading** — Chrome loads the DevTools extension via `--load-extension`. At `document_start`, `installHook.js` installs `__REACT_DEVTOOLS_GLOBAL_HOOK__` and `backend.js` creates an Agent connected to the hook.
 
-2. **Backend activation** — When `profiler.start()` is called, the compact backend is loaded and an Agent is created that bridges React's renderer to profiling controls.
+2. **Bridge transport** — `backend.js` (MAIN world) communicates with `frontend.js` (service worker) through `proxy.js` (ISOLATED world). Messages flow via `window.postMessage` -> `chrome.runtime` port.
 
-3. **Profiling** — Uses the same internal APIs as React DevTools Profiler tab: `startProfiling()`, `stopProfiling()`, `getProfilingData()`.
+3. **Profiling** — When `profiler.start()` is called, the page sends a command through the proxy to the service worker, which tells ProfilerStore to start profiling. The Agent relays profiling status to all React renderers.
 
-4. **Stability detection** — Monitors React operation count. When no new operations arrive for `stableThresholdMs`, rendering is considered stable.
+4. **Operations buffering** — During profiling, `backend.js` buffers Bridge operations instead of sending them per-commit via postMessage. They are flushed in one burst when profiling stops, before profilingData arrives.
+
+5. **Export** — `prepareProfilingDataExport()` (same function as DevTools "Export" button) produces the final JSON. A shadow element map enriches snapshots with elements that were mounted and unmounted during profiling.
+
+6. **Stability detection** — Monitors `onCommitFiberRoot` hook. When no new commits arrive for `stableThresholdMs`, rendering is considered stable.
+
+## Performance
+
+`recordChangeDescriptions` is intentionally disabled. It causes ~10s overhead on large apps (19k+ fibers) by diffing props/state for every component on each commit. Without it, profiler overhead is ~270ms and commit batching patterns closely match manual DevTools profiling.
 
 ## Requirements
 
 - React app running in **development** or **profiling** mode (production builds strip DevTools support)
 - Playwright >= 1.30
 - Node.js >= 16
+- Chrome/Chromium (extensions require `channel: 'chromium'`)
 
 ## Project Structure
 
 ```
 playwright-react-profiler/
 ├── src/
-│   ├── index.ts       # Main exports
-│   ├── fixture.ts     # Playwright test fixture
-│   ├── profiler.ts    # Core profiling logic
-│   ├── analyze.ts     # Profile analysis utilities
-│   └── types.ts       # TypeScript types
-├── react-source/      # Git submodule (facebook/react)
-├── devtools-build/    # Built DevTools files (gitignored)
+│   ├── index.ts          # Main exports
+│   ├── fixture.ts        # Playwright test fixture
+│   ├── profiler.ts       # Core profiling logic
+│   ├── analyze.ts        # Profile analysis utilities
+│   ├── types.ts          # TypeScript types
+│   ├── backend.js        # Extension: MAIN world (Agent, Bridge)
+│   ├── frontend.js       # Extension: service worker (Store, ProfilerStore)
+│   └── headlessProfiler.js  # Legacy single-thread version
+├── devtools-extension/   # Built Chrome extension
+│   ├── manifest.json     # Manifest V3 with service worker
+│   ├── proxy.js          # ISOLATED world relay (plain JS)
+│   ├── installHook.js    # Built from react-source (gitignored)
+│   ├── backend.js        # Built from react-source (gitignored)
+│   └── frontend.js       # Built from react-source (gitignored)
+├── react-source/         # Git submodule (facebook/react)
 ├── scripts/
-│   └── build-devtools.sh
-└── example/
-    ├── playwright.config.ts
-    └── profile.spec.ts
+│   └── build-devtools.sh # Builds extension from react-source
+└── dist/                 # Compiled TypeScript output
 ```
 
 ## License
