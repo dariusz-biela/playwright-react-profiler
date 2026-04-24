@@ -104,9 +104,6 @@ chrome.runtime.onConnect.addListener((port) => {
 
     switch (action) {
       case 'start': {
-        if (args?.recordChangeDescriptions != null) {
-          store.recordChangeDescriptions = args.recordChangeDescriptions;
-        }
         profilerStore.startProfiling();
         respond(true);
         break;

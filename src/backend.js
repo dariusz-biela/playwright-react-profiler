@@ -5,10 +5,10 @@
  * Communicates with the frontend (Store/ProfilerStore in service worker)
  * via window.postMessage through proxy.js (ISOLATED world).
  *
- * This matches real DevTools architecture: backend on main thread,
- * frontend in a separate process. The key benefit is that Store/ProfilerStore
- * processing happens off the main thread, reducing interference with
- * React's scheduler and producing more natural commit batching patterns.
+ * Optimization: during profiling, 'operations' events are buffered instead
+ * of being sent via postMessage per commit. This eliminates structured
+ * cloning overhead on the main thread during profiling. Buffered operations
+ * are flushed in one burst before profilingData arrives.
  *
  * Exposes: window.__REACT_PROFILER__ (all methods return Promises)
  */
@@ -20,10 +20,22 @@ import {getDefaultComponentFilters} from 'react-devtools-shared/src/utils';
 
 const hook = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
 if (hook != null) {
+  // ── Operations buffering ──
+  // During profiling, buffer 'operations' events to avoid per-commit
+  // postMessage overhead. Flush them before profilingData so ProfilerStore
+  // receives operations in correct order.
+  let isProfilingActive = false;
+  const bufferedOperations = [];
+
+  function postToProxy(event, payload, transferable) {
+    window.postMessage(
+      {source: 'react-profiler-backend', payload: {event, payload}},
+      '*',
+      transferable,
+    );
+  }
+
   // ── Bridge wall ──
-  // Messages flow: backend.js ↔ proxy.js ↔ service worker (frontend.js)
-  // MAIN world cannot access chrome.runtime, so we use window.postMessage
-  // to reach proxy.js in the ISOLATED world.
   const bridge = new Bridge({
     listen(fn) {
       const handler = (event) => {
@@ -39,11 +51,39 @@ if (hook != null) {
       return () => window.removeEventListener('message', handler);
     },
     send(event, payload, transferable) {
-      window.postMessage(
-        {source: 'react-profiler-backend', payload: {event, payload}},
-        '*',
-        transferable,
-      );
+      // Detect profiling start
+      if (event === 'profilingStatus' && payload === true) {
+        isProfilingActive = true;
+      }
+
+      // Buffer operations during profiling — biggest main thread savings
+      if (isProfilingActive && event === 'operations') {
+        bufferedOperations.push(payload);
+        return;
+      }
+
+      // Flush buffered operations before profilingData arrives
+      // ProfilerStore needs operations to build commit data correctly
+      if (event === 'profilingData' && bufferedOperations.length > 0) {
+        for (let i = 0; i < bufferedOperations.length; i++) {
+          postToProxy('operations', bufferedOperations[i]);
+        }
+        bufferedOperations.length = 0;
+        isProfilingActive = false;
+      }
+
+      // Detect profiling stop (backup — profilingData may not fire if no data)
+      if (event === 'profilingStatus' && payload === false) {
+        if (bufferedOperations.length > 0) {
+          for (let i = 0; i < bufferedOperations.length; i++) {
+            postToProxy('operations', bufferedOperations[i]);
+          }
+          bufferedOperations.length = 0;
+        }
+        isProfilingActive = false;
+      }
+
+      postToProxy(event, payload, transferable);
     },
   });
 
@@ -51,10 +91,6 @@ if (hook != null) {
   const agent = new Agent(bridge, false, () => {});
 
   // ── Apply default component filters ──
-  // Hide host components (div, span, svg, etc.) same as real DevTools.
-  // Must be applied before flushInitialOperations — monkey-patch
-  // registerRendererInterface since renderers aren't attached yet at
-  // document_start.
   const defaultFilters = getDefaultComponentFilters();
   const origRegister = agent.registerRendererInterface.bind(agent);
   agent.registerRendererInterface = function (id, rendererInterface) {
@@ -65,7 +101,6 @@ if (hook != null) {
   initBackend(hook, agent, window, false);
 
   // ── Command / response protocol ──
-  // Page API sends commands to service worker via proxy, receives responses.
   let commandId = 0;
   const pendingCommands = new Map();
 
@@ -99,10 +134,9 @@ if (hook != null) {
   }
 
   // ── Public API ──
-  // All methods return Promises (cross-process communication).
   window.__REACT_PROFILER__ = {
-    startProfiling(recordChangeDescriptions) {
-      return sendCommand('start', {recordChangeDescriptions});
+    startProfiling() {
+      return sendCommand('start');
     },
 
     stopProfiling() {

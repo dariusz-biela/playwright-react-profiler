@@ -23,7 +23,6 @@ const DEFAULT_CONFIG: Required<ProfilerConfig> = {
     stableThresholdMs: 2000,
     pollIntervalMs: 100,
     maxWaitMs: 30000,
-    recordChangeDescriptions: true,
 };
 
 /**
@@ -65,9 +64,9 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
             const ready = await waitForProfilerReady(page);
             if (!ready) throw new Error('React DevTools profiler not ready — no renderer found');
 
-            await page.evaluate(async (recordChanges) => {
-                await (window as any).__REACT_PROFILER__.startProfiling(recordChanges);
-            }, cfg.recordChangeDescriptions);
+            await page.evaluate(async () => {
+                await (window as any).__REACT_PROFILER__.startProfiling();
+            });
         },
 
         async stop(): Promise<ProfileExport | null> {

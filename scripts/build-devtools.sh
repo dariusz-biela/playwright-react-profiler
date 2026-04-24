@@ -32,11 +32,14 @@ cp "$ROOT_DIR/src/frontend.js" "$EXTENSIONS_DIR/src/profilerFrontend.js"
 echo "Patching webpack config..."
 WEBPACK_CONFIG="$EXTENSIONS_DIR/webpack.config.js"
 
-# Remove old entries if present (headlessProfiler, profilerBackend, profilerFrontend)
-sed -i.bak "/headlessProfiler/d; /profilerBackend/d; /profilerFrontend/d" "$WEBPACK_CONFIG"
-rm -f "$WEBPACK_CONFIG.bak"
+# Remove old headlessProfiler entry if present
+if grep -q "headlessProfiler" "$WEBPACK_CONFIG"; then
+    sed -i.bak "/headlessProfiler/d" "$WEBPACK_CONFIG"
+    rm -f "$WEBPACK_CONFIG.bak"
+    echo "  Removed old headlessProfiler entry"
+fi
 
-# Add profilerBackend + profilerFrontend entries
+# Add profilerBackend + profilerFrontend entries (idempotent)
 if ! grep -q "profilerBackend" "$WEBPACK_CONFIG"; then
     sed -i.bak "s|installHook: './src/contentScripts/installHook.js',|installHook: './src/contentScripts/installHook.js',\n    profilerBackend: './src/profilerBackend.js',\n    profilerFrontend: './src/profilerFrontend.js',|" "$WEBPACK_CONFIG"
     rm -f "$WEBPACK_CONFIG.bak"
@@ -45,11 +48,13 @@ else
     echo "  profilerBackend/profilerFrontend entries already present"
 fi
 
-# Add filename mappings for our entries (output as backend.js / frontend.js)
-if ! grep -q "profilerBackend" "$WEBPACK_CONFIG" || ! grep -qF "case 'profilerBackend'" "$WEBPACK_CONFIG"; then
+# Add filename mappings (idempotent)
+if ! grep -qF "case 'profilerBackend'" "$WEBPACK_CONFIG"; then
     sed -i.bak "s|case 'backend':|case 'profilerBackend':\n          return 'backend.js';\n        case 'profilerFrontend':\n          return 'frontend.js';\n        case 'backend':|" "$WEBPACK_CONFIG"
     rm -f "$WEBPACK_CONFIG.bak"
     echo "  Added output filename mappings"
+else
+    echo "  Output filename mappings already present"
 fi
 
 # ── Install dependencies in react-source root ──

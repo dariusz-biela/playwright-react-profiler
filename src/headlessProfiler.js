@@ -109,10 +109,7 @@ if (hook != null) {
 
   // ── Public API ──
   window.__REACT_PROFILER__ = {
-    startProfiling(recordChangeDescriptions) {
-      if (recordChangeDescriptions != null) {
-        store.recordChangeDescriptions = recordChangeDescriptions;
-      }
+    startProfiling() {
       profilerStore.startProfiling();
     },
 

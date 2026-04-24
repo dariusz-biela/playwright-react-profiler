@@ -53,7 +53,6 @@ export interface ProfilerConfig {
     stableThresholdMs?: number;
     pollIntervalMs?: number;
     maxWaitMs?: number;
-    recordChangeDescriptions?: boolean;
 }
 
 export interface ReactProfiler {
