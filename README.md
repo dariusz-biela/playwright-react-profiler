@@ -26,28 +26,23 @@ Key benefits:
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/TODO/playwright-react-profiler.git
+git clone https://github.com/dariusz-biela/playwright-react-profiler.git
 cd playwright-react-profiler
 npm install
 ```
 
-### 2. Build the library
+Both `dist/` (compiled TypeScript) and `devtools-extension/` (built Chrome extension) ship pre-built — no extra build step needed.
 
-```bash
-npm run build
-```
+> **Rebuilding from source (development only):**
+> - **TypeScript**: `npm run build` recompiles `src/*.ts` into `dist/`.
+> - **DevTools extension**: if you modify `src/backend.js` or `src/frontend.js`, or want to upgrade to a newer React DevTools version:
+>   ```bash
+>   git submodule update --init react-source
+>   npm run build-devtools
+>   ```
+>   This rebuilds `installHook.js`, `backend.js`, and `frontend.js` from `react-source` into `devtools-extension/`.
 
-The DevTools extension (`devtools-extension/`) ships pre-built — no extra setup needed.
-
-> **Rebuilding the extension (development only):**
-> If you need to modify the extension source (`src/backend.js`, `src/frontend.js`) or upgrade to a newer React DevTools version:
-> ```bash
-> git submodule update --init react-source
-> npm run build-devtools
-> ```
-> This rebuilds `installHook.js`, `backend.js`, and `frontend.js` from `react-source` into `devtools-extension/`.
-
-### 3. Use in your project
+### 2. Use in your project
 
 ```json
 {
@@ -57,7 +52,7 @@ The DevTools extension (`devtools-extension/`) ships pre-built — no extra setu
 }
 ```
 
-### 4. Write a profiling test
+### 3. Write a profiling test
 
 ```typescript
 import {test, expect} from 'playwright-react-profiler';
@@ -74,7 +69,7 @@ test('profile page load', async ({page, profiler}) => {
 });
 ```
 
-### 5. Run
+### 4. Run
 
 ```bash
 # Headless
@@ -251,7 +246,7 @@ playwright-react-profiler/
 ├── react-source/         # Git submodule (facebook/react) — dev only
 ├── scripts/
 │   └── build-devtools.sh # Rebuilds extension from react-source
-└── dist/                 # Compiled TypeScript output
+└── dist/                 # Compiled TypeScript output (committed)
 ```
 
 ## License
