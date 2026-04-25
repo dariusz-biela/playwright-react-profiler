@@ -137,40 +137,44 @@ chrome.runtime.onConnect.addListener((port) => {
       }
 
       case 'export': {
-        const data = profilerStore.profilingData;
-        if (data == null) {
-          respond(null);
-          break;
+        try {
+          const data = profilerStore.profilingData;
+          if (data == null) {
+            respond(null);
+            break;
+          }
+
+          // Enrich snapshots with elements created during profiling.
+          // ProfilerStore only snapshots elements at profiling START.
+          // Elements mounted DURING profiling exist in the shadow map.
+          data.dataForRoots.forEach((rootData) => {
+            const snapshotMap = rootData.snapshots;
+            const allFiberIds = new Set();
+
+            rootData.commitData.forEach((commit) => {
+              commit.fiberActualDurations.forEach((_duration, fiberId) =>
+                allFiberIds.add(fiberId),
+              );
+              commit.fiberSelfDurations.forEach((_duration, fiberId) =>
+                allFiberIds.add(fiberId),
+              );
+            });
+
+            allFiberIds.forEach((fiberId) => {
+              if (snapshotMap.has(fiberId)) {
+                return;
+              }
+              const element = allElementsEverSeen.get(fiberId);
+              if (element != null) {
+                snapshotMap.set(fiberId, element);
+              }
+            });
+          });
+
+          respond(prepareProfilingDataExport(data));
+        } catch (e) {
+          respond({error: String(e), stack: e?.stack});
         }
-
-        // Enrich snapshots with elements created during profiling.
-        // ProfilerStore only snapshots elements at profiling START.
-        // Elements mounted DURING profiling exist in the shadow map.
-        data.dataForRoots.forEach((rootData) => {
-          const snapshotMap = rootData.snapshots;
-          const allFiberIds = new Set();
-
-          rootData.commitData.forEach((commit) => {
-            commit.fiberActualDurations.forEach(([fiberId]) =>
-              allFiberIds.add(fiberId),
-            );
-            commit.fiberSelfDurations.forEach(([fiberId]) =>
-              allFiberIds.add(fiberId),
-            );
-          });
-
-          allFiberIds.forEach((fiberId) => {
-            if (snapshotMap.has(fiberId)) {
-              return;
-            }
-            const element = allElementsEverSeen.get(fiberId);
-            if (element != null) {
-              snapshotMap.set(fiberId, element);
-            }
-          });
-        });
-
-        respond(prepareProfilingDataExport(data));
         break;
       }
 
