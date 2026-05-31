@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import {BrowserContext, chromium, Page} from '@playwright/test';
-import {ProfileExport, ProfilerConfig, ReactProfiler} from './types';
+import {ProfileExport, ProfilerConfig, ReactProfiler, StartProfilingOptions} from './types';
 
 type LaunchPersistentContextOptions = NonNullable<Parameters<typeof chromium.launchPersistentContext>[1]>;
 
@@ -21,6 +21,7 @@ export const RECOMMENDED_PROFILING_ARGS: readonly string[] = [
 const DEFAULT_CONFIG: Required<ProfilerConfig> = {
     stableThresholdMs: 2000,
     maxWaitMs: 30000,
+    recordChangeDescriptions: false,
 };
 
 /**
@@ -95,13 +96,16 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
     let stableCallId = 0;
 
     return {
-        async start(): Promise<void> {
+        async start(options: StartProfilingOptions = {}): Promise<void> {
             const ready = await waitForProfilerReady(page);
             if (!ready) throw new Error('React DevTools profiler not ready — no renderer found');
 
-            await page.evaluate(async () => {
-                await (window as any).__REACT_PROFILER__.startProfiling();
-            });
+            const startOptions: Required<StartProfilingOptions> = {
+                recordChangeDescriptions: options.recordChangeDescriptions ?? cfg.recordChangeDescriptions,
+            };
+            await page.evaluate(async (opts) => {
+                await (window as any).__REACT_PROFILER__.startProfiling(opts);
+            }, startOptions);
         },
 
         async stop(): Promise<ProfileExport | null> {

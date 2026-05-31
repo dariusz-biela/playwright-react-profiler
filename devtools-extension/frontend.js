@@ -46582,7 +46582,7 @@ ${(0, util.inspect)(map2, {
       if (message.type !== "command") {
         return;
       }
-      const { id, action } = message.payload;
+      const { id, action, args } = message.payload;
       function respond(result) {
         try {
           port.postMessage({ type: "response", payload: { id, result } });
@@ -46591,6 +46591,7 @@ ${(0, util.inspect)(map2, {
       }
       switch (action) {
         case "start": {
+          store.recordChangeDescriptions = args?.recordChangeDescriptions === true;
           profilerStore.startProfiling();
           respond(true);
           break;

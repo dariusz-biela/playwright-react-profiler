@@ -25,6 +25,7 @@ exports.RECOMMENDED_PROFILING_ARGS = [
 const DEFAULT_CONFIG = {
     stableThresholdMs: 2000,
     maxWaitMs: 30000,
+    recordChangeDescriptions: false,
 };
 /**
  * Resolve the path to the React DevTools extension directory.
@@ -95,13 +96,16 @@ function createProfiler(page, config) {
     const cfg = { ...DEFAULT_CONFIG, ...config };
     let stableCallId = 0;
     return {
-        async start() {
+        async start(options = {}) {
             const ready = await waitForProfilerReady(page);
             if (!ready)
                 throw new Error('React DevTools profiler not ready — no renderer found');
-            await page.evaluate(async () => {
-                await window.__REACT_PROFILER__.startProfiling();
-            });
+            const startOptions = {
+                recordChangeDescriptions: options.recordChangeDescriptions ?? cfg.recordChangeDescriptions,
+            };
+            await page.evaluate(async (opts) => {
+                await window.__REACT_PROFILER__.startProfiling(opts);
+            }, startOptions);
         },
         async stop() {
             return page.evaluate(async () => {

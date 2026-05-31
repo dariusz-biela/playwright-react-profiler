@@ -51,10 +51,31 @@ export interface ProfileResult {
 export interface ProfilerConfig {
     stableThresholdMs?: number;
     maxWaitMs?: number;
+    /**
+     * Default for {@link StartProfilingOptions.recordChangeDescriptions} on every
+     * `profiler.start()` from this instance. A per-call `start({...})` overrides it.
+     */
+    recordChangeDescriptions?: boolean;
+}
+
+export interface StartProfilingOptions {
+    /**
+     * Record why each component rendered — the "Record why each component
+     * rendered while profiling" toggle in React DevTools. Populates each
+     * commit's `changeDescriptions`.
+     *
+     * Defaults to `false` to keep profiling overhead minimal. It is safe to
+     * leave off for timing work: recorded render durations are unaffected
+     * (change-description computation runs outside React's measured render
+     * phase, so the commit structure is identical with it on or off). Turn it
+     * on when you need to know *why* a component re-rendered (e.g. which prop,
+     * state, or hook changed).
+     */
+    recordChangeDescriptions?: boolean;
 }
 
 export interface ReactProfiler {
-    start(): Promise<void>;
+    start(options?: StartProfilingOptions): Promise<void>;
     stop(): Promise<ProfileExport | null>;
     waitForStable(): Promise<void>;
     isReady(): Promise<boolean>;

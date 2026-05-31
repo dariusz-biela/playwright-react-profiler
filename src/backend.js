@@ -123,8 +123,8 @@ function sendCommand(action, args) {
 
 // ── 5. Public API ──
 window.__REACT_PROFILER__ = {
-  startProfiling() {
-    return sendCommand('start');
+  startProfiling(options) {
+    return sendCommand('start', options);
   },
   stopProfiling() {
     return sendCommand('stop');

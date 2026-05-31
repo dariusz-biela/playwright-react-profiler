@@ -100,7 +100,7 @@ chrome.runtime.onConnect.addListener((port) => {
     if (message.type !== 'command') {
       return;
     }
-    const {id, action} = message.payload;
+    const {id, action, args} = message.payload;
 
     function respond(result) {
       try {
@@ -112,6 +112,9 @@ chrome.runtime.onConnect.addListener((port) => {
 
     switch (action) {
       case 'start': {
+        // Opt-in "Record why each component rendered". Off by default to keep
+        // profiling overhead minimal; render durations are unaffected either way.
+        store.recordChangeDescriptions = args?.recordChangeDescriptions === true;
         profilerStore.startProfiling();
         respond(true);
         break;

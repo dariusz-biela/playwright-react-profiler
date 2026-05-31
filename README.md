@@ -105,11 +105,21 @@ Extends `@playwright/test` with a `profiler` fixture. Launches a persistent Chro
 
 | Method | Description |
 |--------|-------------|
-| `profiler.start()` | Start profiling (waits for React renderer to be ready) |
+| `profiler.start(options?)` | Start profiling (waits for React renderer to be ready). `options.recordChangeDescriptions` (default `false`) records why each component rendered |
 | `profiler.stop()` | Stop profiling and return profile export |
 | `profiler.waitForStable()` | Wait until no new React commits for `stableThresholdMs` |
 | `profiler.isReady()` | Check if React renderer is connected |
 | `profiler.exportProfile()` | Export current profile without stopping |
+
+#### `recordChangeDescriptions`
+
+Off by default. When enabled, every commit's `changeDescriptions` is populated with why each component rendered (which prop, state, or hook changed) — the same data as the DevTools "Record why each component rendered while profiling" toggle.
+
+```typescript
+await profiler.start({recordChangeDescriptions: true});
+```
+
+The recorded render durations and commit structure are identical with it on or off (change-description diffing runs outside React's measured render phase). Leave it off for timing work; turn it on to investigate *why* components re-render.
 
 ### `launchProfilingContext(userDataDir, overrides?)`
 
@@ -216,7 +226,9 @@ Use **`--repeat-each`** when you need accurate absolute numbers (regression dete
 
 ## Performance
 
-`recordChangeDescriptions` is intentionally disabled. It causes ~10s overhead on large apps (19k+ fibers) by diffing props/state for every component on each commit. Without it, profiler overhead is ~270ms and commit batching patterns closely match manual DevTools profiling.
+`recordChangeDescriptions` is **off by default** (opt in per `profiler.start({recordChangeDescriptions: true})`). It does not change recorded render durations or commit structure — React measures the render phase, while change-description diffing runs in the commit/passive phase — but the diffing itself costs main-thread time during profiling: negligible on a typical interaction (~+2ms here), but it can reach seconds on very large trees (19k+ fibers) since it walks props/state for every component on every commit. Keep it off for timing work; turn it on only when you need the "why did this render" data.
+
+Profiler overhead is otherwise minimal: the Store/ProfilerStore run in a service worker (off the page main thread) and operations are buffered during profiling, so recorded render durations track the un-profiled cost closely (lower observer effect than a headed browser with the DevTools panel open).
 
 ## Requirements
 
