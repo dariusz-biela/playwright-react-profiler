@@ -24,13 +24,56 @@
 
 import {initialize, connectWithCustomMessagingProtocol} from 'react-devtools-core/backend';
 
+// ── 0. Reload-and-profile flag (the DevTools "Reload and profile" button) ──
+// To capture the initial mount, profiling must start before React renders —
+// which is impossible to request after the page has loaded. Real DevTools
+// solves this by persisting a flag in sessionStorage, reloading, and reading
+// the flag at document_start on the next load. We use the exact same keys, so
+// profiler.reloadAndProfile() sets them from the page before reloading.
+const RELOAD_AND_PROFILE_KEY = 'React::DevTools::reloadAndProfile';
+const RECORD_CHANGE_DESCRIPTIONS_KEY = 'React::DevTools::recordChangeDescriptions';
+const RECORD_TIMELINE_KEY = 'React::DevTools::recordTimeline';
+
+function readReloadAndProfileState() {
+  try {
+    return {
+      shouldStartProfilingNow: sessionStorage.getItem(RELOAD_AND_PROFILE_KEY) === 'true',
+      recordChangeDescriptions: sessionStorage.getItem(RECORD_CHANGE_DESCRIPTIONS_KEY) === 'true',
+      recordTimeline: sessionStorage.getItem(RECORD_TIMELINE_KEY) === 'true',
+    };
+  } catch (e) {
+    // sessionStorage can throw (disabled cookies / sandboxed frame). Treat as
+    // a normal load with no reload-and-profile request.
+    return {shouldStartProfilingNow: false, recordChangeDescriptions: false, recordTimeline: false};
+  }
+}
+
+function clearReloadAndProfileFlags() {
+  try {
+    sessionStorage.removeItem(RELOAD_AND_PROFILE_KEY);
+    sessionStorage.removeItem(RECORD_CHANGE_DESCRIPTIONS_KEY);
+    sessionStorage.removeItem(RECORD_TIMELINE_KEY);
+  } catch (e) {
+    // Nothing to clear if sessionStorage is unavailable.
+  }
+}
+
+const reloadAndProfile = readReloadAndProfileState();
+
 // ── 1. Install the DevTools hook before React initializes ──
 // initialize() seeds the hook with getDefaultComponentFilters(), so host
 // components (divs, etc.) are filtered out exactly as in the real DevTools.
-initialize();
+// When reloadAndProfile is requested, the second argument starts profiling the
+// moment each renderer attaches, so the initial mount is recorded.
+initialize(undefined, reloadAndProfile.shouldStartProfilingNow, {
+  recordChangeDescriptions: reloadAndProfile.recordChangeDescriptions,
+  recordTimeline: reloadAndProfile.recordTimeline,
+});
 
 // ── 2. Outgoing transport (backend → frontend) with operations buffering ──
-let isProfilingActive = false;
+// On a reload-and-profile load, profiling is already active before the first
+// commit, so buffer operations from the very first one.
+let isProfilingActive = reloadAndProfile.shouldStartProfilingNow;
 const bufferedOperations = [];
 
 function postToProxy(event, payload) {
@@ -83,6 +126,13 @@ connectWithCustomMessagingProtocol({
 
     postToProxy(event, payload);
   },
+  // Reload-and-profile: tell the Agent profiling is already active so it
+  // broadcasts profilingStatus(true) to the frontend ProfilerStore (which then
+  // accepts the buffered mount operations on stop). The flags are one-shot —
+  // connectWithCustomMessagingProtocol calls this reset right after wiring the
+  // Agent, so an ordinary reload afterwards profiles nothing.
+  isProfiling: reloadAndProfile.shouldStartProfilingNow,
+  onReloadAndProfileFlagsReset: clearReloadAndProfileFlags,
 });
 
 // Incoming transport (frontend → backend). proxy.js relays service-worker

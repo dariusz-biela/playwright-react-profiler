@@ -155,30 +155,25 @@ chrome.runtime.onConnect.addListener((port) => {
             break;
           }
 
-          // Enrich snapshots with elements created during profiling.
-          // ProfilerStore only snapshots elements at profiling START; elements
-          // mounted DURING profiling exist in the shadow map.
-          data.dataForRoots.forEach((rootData) => {
-            const snapshotMap = rootData.snapshots;
-            const allFiberIds = new Set();
+          // prepareProfilingDataExport produces the exact format React DevTools'
+          // own Export button does. Crucially, snapshots stay the true
+          // profiling-start baseline — empty for a reload-and-profile startup
+          // capture. Do NOT merge extra elements into snapshots: DevTools
+          // rebuilds each commit tree from baseline + operations, so a fiber
+          // present in both the baseline and an ADD operation throws "Commit
+          // tree already contains fiber" (and on a mount capture every fiber is
+          // ADDed, so any snapshot entry collides).
+          const exportData = prepareProfilingDataExport(data);
 
-            rootData.commitData.forEach((commit) => {
-              commit.fiberActualDurations.forEach((_duration, fiberId) => allFiberIds.add(fiberId));
-              commit.fiberSelfDurations.forEach((_duration, fiberId) => allFiberIds.add(fiberId));
-            });
+          // Sidecar: the shadow element map (every element ever seen, including
+          // those mounted and unmounted during profiling). A top-level custom
+          // field is ignored by DevTools import — it reads only version,
+          // dataForRoots and timelineData — but lets offline analysis
+          // (compare-profiles.ts) resolve names for fibers absent from the
+          // baseline snapshots.
+          exportData.shadowElements = Array.from(allElementsEverSeen.entries(), ([id, element]) => [id, {displayName: element.displayName, type: element.type}]);
 
-            allFiberIds.forEach((fiberId) => {
-              if (snapshotMap.has(fiberId)) {
-                return;
-              }
-              const element = allElementsEverSeen.get(fiberId);
-              if (element != null) {
-                snapshotMap.set(fiberId, element);
-              }
-            });
-          });
-
-          respond(prepareProfilingDataExport(data));
+          respond(exportData);
         } catch (e) {
           respond({error: String(e), stack: e?.stack});
         }
@@ -191,7 +186,11 @@ chrome.runtime.onConnect.addListener((port) => {
       }
 
       case 'isProfiling': {
-        respond(profilerStore.isProfiling);
+        // ProfilerStore exposes isProfilingBasedOnUserInput (there is no plain
+        // `isProfiling` getter). True once profiling is active — including a
+        // reload-and-profile load, where the backend starts profiling on its
+        // own and broadcasts the status.
+        respond(profilerStore.isProfilingBasedOnUserInput);
         break;
       }
 

@@ -39,6 +39,14 @@ export interface ProfileExport {
     version: 5;
     dataForRoots: RootProfileData[];
     timelineData: any[];
+    /**
+     * Non-standard sidecar (not part of the React DevTools export format, and
+     * ignored by DevTools import). Every element seen during profiling, keyed by
+     * fiber id, including components that mounted and unmounted mid-session and
+     * are therefore absent from the baseline `snapshots`. Lets offline analysis
+     * resolve names without replaying operations.
+     */
+    shadowElements?: Array<[number, {displayName: string | null; type: number}]>;
 }
 
 export interface ProfileResult {
@@ -76,6 +84,17 @@ export interface StartProfilingOptions {
 
 export interface ReactProfiler {
     start(options?: StartProfilingOptions): Promise<void>;
+    /**
+     * Reload the page and start profiling before React mounts, capturing the
+     * initial render — the DevTools "Reload and profile" button. Use this
+     * instead of {@link ReactProfiler.start} to measure app startup, where the
+     * mount has already finished by the time `start()` could run.
+     *
+     * Resolves once the reloaded page has a React renderer attached under active
+     * profiling. Follow with {@link ReactProfiler.waitForStable} and
+     * {@link ReactProfiler.stop} exactly as for a normal profiling run.
+     */
+    reloadAndProfile(options?: StartProfilingOptions): Promise<void>;
     stop(): Promise<ProfileExport | null>;
     waitForStable(): Promise<void>;
     isReady(): Promise<boolean>;

@@ -106,6 +106,7 @@ Extends `@playwright/test` with a `profiler` fixture. Launches a persistent Chro
 | Method | Description |
 |--------|-------------|
 | `profiler.start(options?)` | Start profiling (waits for React renderer to be ready). `options.recordChangeDescriptions` (default `false`) records why each component rendered |
+| `profiler.reloadAndProfile(options?)` | Reload the page and start profiling **before React mounts**, capturing the initial render (the DevTools "Reload and profile" button). Same `options` as `start` |
 | `profiler.stop()` | Stop profiling and return profile export |
 | `profiler.waitForStable()` | Wait until no new React commits for `stableThresholdMs` |
 | `profiler.isReady()` | Check if React renderer is connected |
@@ -120,6 +121,23 @@ await profiler.start({recordChangeDescriptions: true});
 ```
 
 The recorded render durations and commit structure are identical with it on or off (change-description diffing runs outside React's measured render phase). Leave it off for timing work; turn it on to investigate *why* components re-render.
+
+### Profiling app startup (`reloadAndProfile`)
+
+`profiler.start()` can only begin recording after the page has loaded, so the initial mount has already finished and is missing from the profile. To measure startup, use `reloadAndProfile()` — the programmatic equivalent of the DevTools "Reload and profile" button. It reloads the page and starts profiling at `document_start`, before React renders, so commit 0 is the very first render.
+
+```typescript
+test('profile startup', async ({page, profiler}) => {
+    await page.goto('http://localhost:3000');
+    await page.waitForSelector('#app-loaded'); // let the app settle on the route to profile
+
+    await profiler.reloadAndProfile();          // reload with profiling armed
+    await profiler.waitForStable();
+    const profile = await profiler.stop();      // includes the initial mount
+});
+```
+
+How it works: `reloadAndProfile()` persists the request in `sessionStorage` (the same `React::DevTools::reloadAndProfile` keys real DevTools uses), then reloads. On the next load the extension backend reads the flag and passes `shouldStartProfilingNow` to `react-devtools-core`'s `initialize()`, so each renderer attaches with profiling already on. The flag is one-shot — it is cleared as the backend connects, so a later ordinary reload profiles nothing. A startup profile is recognizable by an **empty initial baseline** (`initialTreeBaseDurations` is `[]`) and a large commit 0 that mounts the whole tree.
 
 ### `launchProfilingContext(userDataDir, overrides?)`
 

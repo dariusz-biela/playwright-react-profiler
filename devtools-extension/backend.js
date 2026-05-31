@@ -16743,8 +16743,34 @@
 
   // src/backend.js
   var import_backend = __toESM(require_backend2());
-  (0, import_backend.initialize)();
-  var isProfilingActive = false;
+  var RELOAD_AND_PROFILE_KEY = "React::DevTools::reloadAndProfile";
+  var RECORD_CHANGE_DESCRIPTIONS_KEY = "React::DevTools::recordChangeDescriptions";
+  var RECORD_TIMELINE_KEY = "React::DevTools::recordTimeline";
+  function readReloadAndProfileState() {
+    try {
+      return {
+        shouldStartProfilingNow: sessionStorage.getItem(RELOAD_AND_PROFILE_KEY) === "true",
+        recordChangeDescriptions: sessionStorage.getItem(RECORD_CHANGE_DESCRIPTIONS_KEY) === "true",
+        recordTimeline: sessionStorage.getItem(RECORD_TIMELINE_KEY) === "true"
+      };
+    } catch (e) {
+      return { shouldStartProfilingNow: false, recordChangeDescriptions: false, recordTimeline: false };
+    }
+  }
+  function clearReloadAndProfileFlags() {
+    try {
+      sessionStorage.removeItem(RELOAD_AND_PROFILE_KEY);
+      sessionStorage.removeItem(RECORD_CHANGE_DESCRIPTIONS_KEY);
+      sessionStorage.removeItem(RECORD_TIMELINE_KEY);
+    } catch (e) {
+    }
+  }
+  var reloadAndProfile = readReloadAndProfileState();
+  (0, import_backend.initialize)(void 0, reloadAndProfile.shouldStartProfilingNow, {
+    recordChangeDescriptions: reloadAndProfile.recordChangeDescriptions,
+    recordTimeline: reloadAndProfile.recordTimeline
+  });
+  var isProfilingActive = reloadAndProfile.shouldStartProfilingNow;
   var bufferedOperations = [];
   function postToProxy(event, payload) {
     window.postMessage({ source: "react-profiler-backend", payload: { event, payload } }, "*");
@@ -16782,7 +16808,14 @@
         isProfilingActive = false;
       }
       postToProxy(event, payload);
-    }
+    },
+    // Reload-and-profile: tell the Agent profiling is already active so it
+    // broadcasts profilingStatus(true) to the frontend ProfilerStore (which then
+    // accepts the buffered mount operations on stop). The flags are one-shot —
+    // connectWithCustomMessagingProtocol calls this reset right after wiring the
+    // Agent, so an ordinary reload afterwards profiles nothing.
+    isProfiling: reloadAndProfile.shouldStartProfilingNow,
+    onReloadAndProfileFlagsReset: clearReloadAndProfileFlags
   });
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.source !== "react-profiler-frontend") {

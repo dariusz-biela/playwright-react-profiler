@@ -108,6 +108,49 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
             }, startOptions);
         },
 
+        async reloadAndProfile(options: StartProfilingOptions = {}): Promise<void> {
+            const recordChangeDescriptions = options.recordChangeDescriptions ?? cfg.recordChangeDescriptions;
+
+            // Persist the reload-and-profile request in sessionStorage (same keys
+            // as real DevTools). It survives the reload and is read by backend.js
+            // at document_start, so profiling starts before React mounts.
+            await page.evaluate((opts) => {
+                sessionStorage.setItem('React::DevTools::reloadAndProfile', 'true');
+                sessionStorage.setItem('React::DevTools::recordChangeDescriptions', opts.recordChangeDescriptions ? 'true' : 'false');
+                sessionStorage.setItem('React::DevTools::recordTimeline', 'false');
+            }, {recordChangeDescriptions});
+
+            await page.reload({waitUntil: 'domcontentloaded', timeout: cfg.maxWaitMs});
+
+            // store.roots stays empty while profiling (operations are buffered and
+            // only flushed on stop), so isReady() — which checks store.roots — is
+            // useless here. Instead confirm the page-world hook has an attached
+            // renderer (the mount is being recorded)...
+            await page.waitForFunction(
+                () => {
+                    const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+                    return Boolean(hook?.renderers && hook.renderers.size > 0);
+                },
+                undefined,
+                {timeout: cfg.maxWaitMs},
+            );
+
+            // ...then confirm the off-thread ProfilerStore has entered profiling
+            // state, so a subsequent stop() yields data. Each poll is bounded so a
+            // not-yet-connected service worker can't hang the evaluate.
+            const deadline = Date.now() + cfg.maxWaitMs;
+            while (Date.now() < deadline) {
+                const profiling = await page.evaluate(async () => {
+                    const profiler = (window as any).__REACT_PROFILER__;
+                    if (!profiler) return false;
+                    return Promise.race([profiler.isProfiling(), new Promise((resolve) => setTimeout(() => resolve(false), 500))]);
+                });
+                if (profiling) return;
+                await page.waitForTimeout(200);
+            }
+            throw new Error('reloadAndProfile: profiling did not activate after reload (service worker not connected?)');
+        },
+
         async stop(): Promise<ProfileExport | null> {
             return page.evaluate(async () => {
                 const profiler = (window as any).__REACT_PROFILER__;

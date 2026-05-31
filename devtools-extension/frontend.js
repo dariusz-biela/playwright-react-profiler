@@ -46626,24 +46626,9 @@ ${(0, util.inspect)(map2, {
               respond(null);
               break;
             }
-            data.dataForRoots.forEach((rootData) => {
-              const snapshotMap = rootData.snapshots;
-              const allFiberIds = /* @__PURE__ */ new Set();
-              rootData.commitData.forEach((commit) => {
-                commit.fiberActualDurations.forEach((_duration, fiberId) => allFiberIds.add(fiberId));
-                commit.fiberSelfDurations.forEach((_duration, fiberId) => allFiberIds.add(fiberId));
-              });
-              allFiberIds.forEach((fiberId) => {
-                if (snapshotMap.has(fiberId)) {
-                  return;
-                }
-                const element = allElementsEverSeen.get(fiberId);
-                if (element != null) {
-                  snapshotMap.set(fiberId, element);
-                }
-              });
-            });
-            respond(prepareProfilingDataExport(data));
+            const exportData = prepareProfilingDataExport(data);
+            exportData.shadowElements = Array.from(allElementsEverSeen.entries(), ([id2, element]) => [id2, { displayName: element.displayName, type: element.type }]);
+            respond(exportData);
           } catch (e) {
             respond({ error: String(e), stack: e?.stack });
           }
@@ -46654,7 +46639,7 @@ ${(0, util.inspect)(map2, {
           break;
         }
         case "isProfiling": {
-          respond(profilerStore.isProfiling);
+          respond(profilerStore.isProfilingBasedOnUserInput);
           break;
         }
         case "diagnostics": {
