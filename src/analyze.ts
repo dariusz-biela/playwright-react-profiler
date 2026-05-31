@@ -23,11 +23,26 @@ function median(arr: number[]): number {
     return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function percentile(arr: number[], p: number): number {
-    if (arr.length === 0) return 0;
-    const sorted = [...arr].sort((a, b) => a - b);
-    const idx = Math.ceil((p / 100) * sorted.length) - 1;
-    return sorted[Math.max(0, idx)];
+/**
+ * Map fiber id -> component display name. Names come from the baseline
+ * `snapshots` plus the `shadowElements` sidecar, which also covers components
+ * that mounted and unmounted mid-profile and are absent from the baseline.
+ */
+function buildNameMap(profile: ProfileExport): Map<number, string> {
+    const names = new Map<number, string>();
+    for (const root of profile.dataForRoots) {
+        for (const [fiberId, node] of root.snapshots) {
+            if (node.displayName) {
+                names.set(fiberId, node.displayName);
+            }
+        }
+    }
+    for (const [fiberId, element] of profile.shadowElements ?? []) {
+        if (element.displayName && !names.has(fiberId)) {
+            names.set(fiberId, element.displayName);
+        }
+    }
+    return names;
 }
 
 export function analyzeResults(profiles: ProfileExport[], wallClockTimes?: number[]): AnalysisResult {
@@ -36,16 +51,16 @@ export function analyzeResults(profiles: ProfileExport[], wallClockTimes?: numbe
     let totalDuration = 0;
 
     for (const profile of profiles) {
+        const nameMap = buildNameMap(profile);
         for (const root of profile.dataForRoots) {
             totalCommits += root.commitData.length;
             for (const commit of root.commitData) {
                 totalDuration += commit.duration;
-                for (const [_fiberId, selfDuration] of commit.fiberSelfDurations ?? []) {
-                    // We don't have name mapping in raw export — use fiberId as key
-                    const key = `fiber_${_fiberId}`;
-                    const list = componentDurations.get(key) ?? [];
+                for (const [fiberId, selfDuration] of commit.fiberSelfDurations ?? []) {
+                    const name = nameMap.get(fiberId) ?? `fiber_${fiberId}`;
+                    const list = componentDurations.get(name) ?? [];
                     list.push(selfDuration);
-                    componentDurations.set(key, list);
+                    componentDurations.set(name, list);
                 }
             }
         }

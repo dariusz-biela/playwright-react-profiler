@@ -13,6 +13,7 @@ export declare const RECOMMENDED_PROFILING_ARGS: readonly string[];
  * Resolve the path to the React DevTools extension directory.
  */
 export declare function resolveExtensionDir(): string;
+export declare function getExtensionArgs(extensionDir: string): string[];
 export declare function createProfiler(page: Page, config?: ProfilerConfig): ReactProfiler;
 export type LaunchProfilingContextOptions = LaunchPersistentContextOptions;
 /**

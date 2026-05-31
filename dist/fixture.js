@@ -3,15 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.expect = exports.test = void 0;
 const test_1 = require("@playwright/test");
 const profiler_1 = require("./profiler");
-function getExtensionArgs(extensionDir) {
-    return [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`];
-}
 /**
  * Extended Playwright test with React profiler fixture.
  *
  * Launches a persistent Chromium context with the React DevTools extension
  * loaded via --load-extension. The extension installs the DevTools hook and
- * activates the backend as content scripts — no manual addInitScript needed.
+ * activates the backend as content scripts - no manual addInitScript needed.
  *
  * Chrome extensions require a persistent context, so the `context` fixture
  * is overridden to use `chromium.launchPersistentContext`.
@@ -32,7 +29,7 @@ exports.test = test_1.test.extend({
         const extensionDir = (0, profiler_1.resolveExtensionDir)();
         const context = await test_1.chromium.launchPersistentContext('', {
             channel: 'chromium',
-            args: [...profiler_1.RECOMMENDED_PROFILING_ARGS, ...getExtensionArgs(extensionDir)],
+            args: [...profiler_1.RECOMMENDED_PROFILING_ARGS, ...(0, profiler_1.getExtensionArgs)(extensionDir)],
         });
         await use(context);
         await context.close();

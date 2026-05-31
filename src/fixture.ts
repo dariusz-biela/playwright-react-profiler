@@ -1,5 +1,5 @@
 import {test as base, chromium, BrowserContext} from '@playwright/test';
-import {createProfiler, resolveExtensionDir, RECOMMENDED_PROFILING_ARGS} from './profiler';
+import {createProfiler, getExtensionArgs, resolveExtensionDir, RECOMMENDED_PROFILING_ARGS} from './profiler';
 import {ProfilerConfig, ReactProfiler} from './types';
 
 export type ProfilerFixtures = {
@@ -7,16 +7,12 @@ export type ProfilerFixtures = {
     profilerConfig: ProfilerConfig;
 };
 
-function getExtensionArgs(extensionDir: string): string[] {
-    return [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`];
-}
-
 /**
  * Extended Playwright test with React profiler fixture.
  *
  * Launches a persistent Chromium context with the React DevTools extension
  * loaded via --load-extension. The extension installs the DevTools hook and
- * activates the backend as content scripts — no manual addInitScript needed.
+ * activates the backend as content scripts - no manual addInitScript needed.
  *
  * Chrome extensions require a persistent context, so the `context` fixture
  * is overridden to use `chromium.launchPersistentContext`.

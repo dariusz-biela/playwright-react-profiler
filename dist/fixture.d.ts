@@ -8,7 +8,7 @@ export type ProfilerFixtures = {
  *
  * Launches a persistent Chromium context with the React DevTools extension
  * loaded via --load-extension. The extension installs the DevTools hook and
- * activates the backend as content scripts — no manual addInitScript needed.
+ * activates the backend as content scripts - no manual addInitScript needed.
  *
  * Chrome extensions require a persistent context, so the `context` fixture
  * is overridden to use `chromium.launchPersistentContext`.

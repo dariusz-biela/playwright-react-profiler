@@ -1,6 +1,6 @@
 # playwright-react-profiler
 
-Playwright extension for automated React DevTools profiling. Captures React render profiles programmatically using the real DevTools pipeline — headless or headed. Outputs profiles importable directly into React DevTools.
+Playwright extension for automated React DevTools profiling. Captures React render profiles programmatically using the real DevTools pipeline - headless or headed. Outputs profiles importable directly into React DevTools.
 
 ## Architecture
 
@@ -15,15 +15,19 @@ Service Worker (off thread):   frontend.js
                                react-devtools-inline: Store, ProfilerStore + prepareProfilingDataExport
 ```
 
-The extension is built from the published `react-devtools-core` and `react-devtools-inline` npm packages (pinned to a stable release), so exported profiles import into a same-versioned official React DevTools extension with zero mapping.
+The extension is built from the published `react-devtools-core` and `react-devtools-inline` npm packages (pinned to a stable release, currently **7.0.1**), so exported profiles import into a same-versioned official React DevTools extension with zero mapping. The official React DevTools extension you import into must be the same major/minor (**7.0.x**).
 
 Key benefits:
-- **Real DevTools pipeline** — Store + ProfilerStore produce identical export format as DevTools "Export" button
-- **Off-thread processing** — Store operations processing runs in a service worker, not on the page's main thread
-- **Shadow element map** — tracks all fiber elements (including unmounted) for complete name resolution
-- **Component filters** — host components (div, span, svg) filtered out, matching DevTools defaults
+- **Real DevTools pipeline** - Store + ProfilerStore produce identical export format as DevTools "Export" button
+- **Off-thread processing** - Store operations processing runs in a service worker, not on the page's main thread
+- **Shadow element map** - tracks all fiber elements (including unmounted) for complete name resolution
+- **Component filters** - host components (div, span, svg) filtered out, matching DevTools defaults
 
 ## Quick Start
+
+> **Before you start:**
+> - Your app must run in **development or profiling mode**. Production builds strip React DevTools support, and profiling fails with `React DevTools profiler not ready - no renderer found`.
+> - Install Playwright's Chromium build once: `npx playwright install chromium`. The profiler launches with `channel: 'chromium'`, the only channel that loads extensions in headless mode.
 
 ### 1. Clone and install
 
@@ -33,15 +37,16 @@ cd playwright-react-profiler
 npm install
 ```
 
-Both `dist/` (compiled TypeScript) and `devtools-extension/` (built Chrome extension) ship pre-built — no extra build step needed.
+Both `dist/` (compiled TypeScript) and `devtools-extension/` (built Chrome extension) ship pre-built - no extra build step needed.
 
 > **Rebuilding from source (development only):**
+> - **Everything at once**: `npm run setup` runs both steps below (`build-devtools`, then `build`).
 > - **TypeScript**: `npm run build` recompiles `src/*.ts` into `dist/`.
 > - **DevTools extension**: if you modify `src/backend.js` or `src/frontend.js`, or want to upgrade to a newer React DevTools version (bump `react-devtools-core` / `react-devtools-inline` in `package.json`):
 >   ```bash
 >   npm run build-devtools
 >   ```
->   This bundles `backend.js` and `frontend.js` from the npm `react-devtools-*` packages into `devtools-extension/` with esbuild (no submodule, no native React build). To import the resulting profiles into the official extension without errors, that extension must be the **same major/minor version** as the pinned packages.
+>   This bundles `backend.js` and `frontend.js` from the npm `react-devtools-*` packages into `devtools-extension/` with esbuild (no submodule, no native React build). To import the resulting profiles into the official extension without errors, that extension must be the **same major/minor version** as the pinned packages (currently **7.0.x**).
 
 ### 2. Use in your project
 
@@ -52,6 +57,8 @@ Both `dist/` (compiled TypeScript) and `devtools-extension/` (built Chrome exten
   }
 }
 ```
+
+The `example/` folder has a runnable spec (`profile.spec.ts`) and a ready Playwright config (`playwright.config.ts`). Copy them as a starting point and point `baseURL` at your dev server.
 
 ### 3. Write a profiling test
 
@@ -95,6 +102,8 @@ test.use({
 });
 ```
 
+> If your app never goes idle (background polling, animations, websockets), `waitForStable()` always runs until `maxWaitMs`. Lower `maxWaitMs`, or skip `waitForStable` and `await` an explicit condition before `stop()`.
+
 ## API
 
 ### `test` (extended Playwright test)
@@ -114,7 +123,7 @@ Extends `@playwright/test` with a `profiler` fixture. Launches a persistent Chro
 
 #### `recordChangeDescriptions`
 
-Off by default. When enabled, every commit's `changeDescriptions` is populated with why each component rendered (which prop, state, or hook changed) — the same data as the DevTools "Record why each component rendered while profiling" toggle.
+Off by default. When enabled, every commit's `changeDescriptions` is populated with why each component rendered (which prop, state, or hook changed) - the same data as the DevTools "Record why each component rendered while profiling" toggle.
 
 ```typescript
 await profiler.start({recordChangeDescriptions: true});
@@ -124,7 +133,7 @@ The recorded render durations and commit structure are identical with it on or o
 
 ### Profiling app startup (`reloadAndProfile`)
 
-`profiler.start()` can only begin recording after the page has loaded, so the initial mount has already finished and is missing from the profile. To measure startup, use `reloadAndProfile()` — the programmatic equivalent of the DevTools "Reload and profile" button. It reloads the page and starts profiling at `document_start`, before React renders, so commit 0 is the very first render.
+`profiler.start()` can only begin recording after the page has loaded, so the initial mount has already finished and is missing from the profile. To measure startup, use `reloadAndProfile()` - the programmatic equivalent of the DevTools "Reload and profile" button. It reloads the page and starts profiling at `document_start`, before React renders, so commit 0 is the very first render.
 
 ```typescript
 test('profile startup', async ({page, profiler}) => {
@@ -137,11 +146,11 @@ test('profile startup', async ({page, profiler}) => {
 });
 ```
 
-How it works: `reloadAndProfile()` persists the request in `sessionStorage` (the same `React::DevTools::reloadAndProfile` keys real DevTools uses), then reloads. On the next load the extension backend reads the flag and passes `shouldStartProfilingNow` to `react-devtools-core`'s `initialize()`, so each renderer attaches with profiling already on. The flag is one-shot — it is cleared as the backend connects, so a later ordinary reload profiles nothing. A startup profile is recognizable by an **empty initial baseline** (`initialTreeBaseDurations` is `[]`) and a large commit 0 that mounts the whole tree.
+How it works: `reloadAndProfile()` persists the request in `sessionStorage` (the same `React::DevTools::reloadAndProfile` keys real DevTools uses), then reloads. On the next load the extension backend reads the flag and passes `shouldStartProfilingNow` to `react-devtools-core`'s `initialize()`, so each renderer attaches with profiling already on. The flag is one-shot - it is cleared as the backend connects, so a later ordinary reload profiles nothing. A startup profile is recognizable by an **empty initial baseline** (`initialTreeBaseDurations` is `[]`) and a large commit 0 that mounts the whole tree.
 
 ### `launchProfilingContext(userDataDir, overrides?)`
 
-Launch a persistent Chromium context with the DevTools extension and profiling flags. Use for setups with saved auth or custom browser configuration.
+Launch a persistent Chromium context with the DevTools extension and profiling flags. The fixture's `test` uses a throwaway profile with no saved auth, so reach for this when profiling a login-gated app: pass a `userDataDir` where you have logged in once. It also purges the extension's stale service-worker cache on launch, so a rebuilt `frontend.js` always takes effect.
 
 ```typescript
 import {launchProfilingContext, createProfiler} from 'playwright-react-profiler';
@@ -182,19 +191,25 @@ const analysis = analyzeResults(profiles);
 console.log(formatAnalysis(analysis));
 ```
 
+Component self-durations are aggregated per component across every commit and profile, and the heaviest are reported. Names are resolved from each profile's `snapshots` and `shadowElements` sidecar (so components that mounted and unmounted mid-profile stay named); anything unresolved falls back to `fiber_<id>`. You can also run it on a saved profile from the CLI:
+
+```bash
+npm run analyze -- path/to/profile.json
+```
+
 ## How It Works
 
-1. **Extension loading** — Chrome loads the DevTools extension via `--load-extension`. At `document_start`, `backend.js` calls `react-devtools-core`'s `initialize()` to install `__REACT_DEVTOOLS_GLOBAL_HOOK__` (seeded with the default component filters), then `connectWithCustomMessagingProtocol()` to wire an Agent + Bridge over the postMessage transport.
+1. **Extension loading** - Chrome loads the DevTools extension via `--load-extension`. At `document_start`, `backend.js` calls `react-devtools-core`'s `initialize()` to install `__REACT_DEVTOOLS_GLOBAL_HOOK__` (seeded with the default component filters), then `connectWithCustomMessagingProtocol()` to wire an Agent + Bridge over the postMessage transport.
 
-2. **Bridge transport** — `backend.js` (MAIN world) communicates with `frontend.js` (service worker) through `proxy.js` (ISOLATED world). Messages flow via `window.postMessage` -> `chrome.runtime` port.
+2. **Bridge transport** - `backend.js` (MAIN world) communicates with `frontend.js` (service worker) through `proxy.js` (ISOLATED world). Messages flow via `window.postMessage` -> `chrome.runtime` port.
 
-3. **Profiling** — When `profiler.start()` is called, the page sends a command through the proxy to the service worker, which tells ProfilerStore to start profiling. The Agent relays profiling status to all React renderers.
+3. **Profiling** - When `profiler.start()` is called, the page sends a command through the proxy to the service worker, which tells ProfilerStore to start profiling. The Agent relays profiling status to all React renderers.
 
-4. **Operations buffering** — During profiling, `backend.js` buffers Bridge operations instead of sending them per-commit via postMessage. They are flushed in one burst when profiling stops, before profilingData arrives.
+4. **Operations buffering** - During profiling, `backend.js` buffers Bridge operations instead of sending them per-commit via postMessage. They are flushed in one burst when profiling stops, before profilingData arrives.
 
-5. **Export** — `prepareProfilingDataExport()` (same function as DevTools "Export" button) produces the final JSON. A shadow element map enriches snapshots with elements that were mounted and unmounted during profiling.
+5. **Export** - `prepareProfilingDataExport()` (same function as DevTools "Export" button) produces the final JSON. A shadow element map enriches snapshots with elements that were mounted and unmounted during profiling.
 
-6. **Stability detection** — Monitors `onCommitFiberRoot` hook. When no new commits arrive for `stableThresholdMs`, rendering is considered stable.
+6. **Stability detection** - Monitors `onCommitFiberRoot` hook. When no new commits arrive for `stableThresholdMs`, rendering is considered stable.
 
 ## Running Multiple Iterations
 
@@ -209,12 +224,12 @@ npx playwright test my-profile-test --repeat-each=20
 ```
 
 **Pros:**
-- More stable and realistic timings — each iteration starts from a clean state
+- More stable and realistic timings - each iteration starts from a clean state
 - No accumulated side effects between iterations (memory pressure, state store growth)
 - Closer to what a real user experiences on each page visit
 
 **Cons:**
-- Significantly slower — browser launch + navigation + warm-up overhead per iteration (e.g. ~9s per iteration vs ~2s)
+- Significantly slower - browser launch + navigation + warm-up overhead per iteration (e.g. ~9s per iteration vs ~2s)
 - Requires shared-folder logic to accumulate results across independent test runs
 
 ### Option B: Internal loop (single browser, multiple measurements)
@@ -231,11 +246,11 @@ for (let i = 1; i <= ITERATIONS; i++) {
 ```
 
 **Pros:**
-- Much faster — no browser/navigation overhead between iterations
-- Simpler result collection — all profiles available in one array
+- Much faster - no browser/navigation overhead between iterations
+- Simpler result collection - all profiles available in one array
 
 **Cons:**
-- Later iterations tend to be faster due to V8 JIT compiler optimizations — the JS engine progressively optimizes hot code paths, so iteration 10 may be measurably faster than iteration 1
+- Later iterations tend to be faster due to V8 JIT compiler optimizations - the JS engine progressively optimizes hot code paths, so iteration 10 may be measurably faster than iteration 1
 - Accumulated state (cached data, DOM nodes, memory) can drift from realistic conditions
 
 ### Recommendation
@@ -244,16 +259,27 @@ Use **`--repeat-each`** when you need accurate absolute numbers (regression dete
 
 ## Performance
 
-`recordChangeDescriptions` is **off by default** (opt in per `profiler.start({recordChangeDescriptions: true})`). It does not change recorded render durations or commit structure — React measures the render phase, while change-description diffing runs in the commit/passive phase — but the diffing itself costs main-thread time during profiling: negligible on a typical interaction (~+2ms here), but it can reach seconds on very large trees (19k+ fibers) since it walks props/state for every component on every commit. Keep it off for timing work; turn it on only when you need the "why did this render" data.
+`recordChangeDescriptions` is **off by default** (opt in per `profiler.start({recordChangeDescriptions: true})`). It does not change recorded render durations or commit structure - React measures the render phase, while change-description diffing runs in the commit/passive phase - but the diffing itself costs main-thread time during profiling: negligible on a typical interaction (~+2ms here), but it can reach seconds on very large trees (19k+ fibers) since it walks props/state for every component on every commit. Keep it off for timing work; turn it on only when you need the "why did this render" data.
 
 Profiler overhead is otherwise minimal: the Store/ProfilerStore run in a service worker (off the page main thread) and operations are buffered during profiling, so recorded render durations track the un-profiled cost closely (lower observer effect than a headed browser with the DevTools panel open).
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---------|-------------|
+| `React DevTools profiler not ready - no renderer found` | The app is not in development/profiling mode, or no React renderer is attached yet. Confirm a dev build and that you navigated to the app before `start()`. |
+| Profile is empty (no `dataForRoots` or no commits) | Profiling started after the work finished. For startup use `reloadAndProfile()`; for an interaction, call `start()` *before* triggering it. |
+| `waitForStable()` always takes `maxWaitMs` | The app never goes idle (polling, animations, websockets). Lower `maxWaitMs`, or `await` your own condition instead of `waitForStable`. |
+| Login-gated page lands on the login screen | The fixture uses a throwaway profile with no auth. Use `launchProfilingContext('./.browser-data')` with a profile where you logged in once. |
+| Edited `frontend.js` but nothing changed | A persistent profile caches the compiled service worker. `launchProfilingContext` purges it automatically; if you launch Chromium yourself, delete `<userDataDir>/Default/Service Worker/{ScriptCache,Database}`. |
+| `Chromium distribution 'chromium' is not found` | Run `npx playwright install chromium`. |
 
 ## Requirements
 
 - React app running in **development** or **profiling** mode (production builds strip DevTools support)
 - Playwright >= 1.30
-- Node.js >= 16
-- Chrome/Chromium (extensions require `channel: 'chromium'`)
+- Node.js >= 18 (the extension build uses esbuild 0.24, which requires it)
+- Chromium installed via `npx playwright install chromium` (the profiler launches with `channel: 'chromium'`, required for headless extension support)
 
 ## Project Structure
 
@@ -277,6 +303,9 @@ playwright-react-profiler/
 │   └── LICENSE           # Meta/React MIT license for bundled files
 ├── scripts/
 │   └── build-devtools.mjs # Bundles the extension from npm react-devtools-* via esbuild
+├── example/              # Runnable example spec + Playwright config (copy as a starting point)
+│   ├── profile.spec.ts
+│   └── playwright.config.ts
 └── dist/                 # Compiled TypeScript output (committed)
 ```
 

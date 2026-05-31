@@ -36,7 +36,7 @@ export function resolveExtensionDir(): string {
     throw new Error('React DevTools extension not found.\nRun: npm run build-devtools');
 }
 
-function getExtensionArgs(extensionDir: string): string[] {
+export function getExtensionArgs(extensionDir: string): string[] {
     return [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`];
 }
 
@@ -47,7 +47,7 @@ function getExtensionArgs(extensionDir: string): string[] {
  * Chrome stores the MV3 service worker (devtools-extension/frontend.js) as
  * compiled bytecode in `Service Worker/ScriptCache` and its registration in
  * `Service Worker/Database`. In a persistent profile a stale compiled worker
- * keeps running even after frontend.js is rebuilt on disk — edits silently
+ * keeps running even after frontend.js is rebuilt on disk - edits silently
  * appear to have no effect (the root cause of confusing "nothing changed"
  * iteration on this tool).
  *
@@ -56,7 +56,7 @@ function getExtensionArgs(extensionDir: string): string[] {
  * worker from starting at all. Clearing ScriptCache + Database forces the
  * extension (and the app) to re-register their workers from disk on the next
  * launch. The app's CacheStorage and saved auth (cookies, localStorage) are
- * left intact, so profiling behavior is unchanged — only stale extension code
+ * left intact, so profiling behavior is unchanged - only stale extension code
  * is evicted.
  */
 function purgeExtensionServiceWorkerCache(userDataDir: string): void {
@@ -71,7 +71,7 @@ function purgeExtensionServiceWorkerCache(userDataDir: string): void {
             try {
                 fs.rmSync(path.join(root, sub), {recursive: true, force: true});
             } catch {
-                // Best-effort: an absent or locked cache is fine — the worker re-registers regardless.
+                // Best-effort: an absent or locked cache is fine - the worker re-registers regardless.
             }
         }
     }
@@ -85,8 +85,8 @@ async function waitForProfilerReady(page: Page, timeoutMs = 10000): Promise<bool
                 const profiler = (window as any).__REACT_PROFILER__;
                 if (!profiler) return false;
                 // Bound the command. On a cold start the service-worker command
-                // channel may not be wired yet, so isReady() — which resolves only
-                // when the SW replies — can hang indefinitely. Without this race the
+                // channel may not be wired yet, so isReady() - which resolves only
+                // when the SW replies - can hang indefinitely. Without this race the
                 // awaited evaluate never returns, the deadline below is never
                 // re-checked, and the caller hangs until the Playwright test
                 // timeout closes the page.
@@ -106,7 +106,7 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
     return {
         async start(options: StartProfilingOptions = {}): Promise<void> {
             const ready = await waitForProfilerReady(page);
-            if (!ready) throw new Error('React DevTools profiler not ready — no renderer found');
+            if (!ready) throw new Error('React DevTools profiler not ready - no renderer found');
 
             const startOptions: Required<StartProfilingOptions> = {
                 recordChangeDescriptions: options.recordChangeDescriptions ?? cfg.recordChangeDescriptions,
@@ -131,7 +131,7 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
             await page.reload({waitUntil: 'domcontentloaded', timeout: cfg.maxWaitMs});
 
             // store.roots stays empty while profiling (operations are buffered and
-            // only flushed on stop), so isReady() — which checks store.roots — is
+            // only flushed on stop), so isReady() - which checks store.roots - is
             // useless here. Instead confirm the page-world hook has an attached
             // renderer (the mount is being recorded)...
             await page.waitForFunction(
