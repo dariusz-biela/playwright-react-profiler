@@ -39,6 +39,43 @@ function getExtensionArgs(extensionDir: string): string[] {
     return [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`];
 }
 
+/**
+ * Remove the persisted extension service-worker cache so a freshly built
+ * extension is always used.
+ *
+ * Chrome stores the MV3 service worker (devtools-extension/frontend.js) as
+ * compiled bytecode in `Service Worker/ScriptCache` and its registration in
+ * `Service Worker/Database`. In a persistent profile a stale compiled worker
+ * keeps running even after frontend.js is rebuilt on disk — edits silently
+ * appear to have no effect (the root cause of confusing "nothing changed"
+ * iteration on this tool).
+ *
+ * Both must be cleared together: deleting only ScriptCache leaves the
+ * registration pointing at a now-missing bytecode resource, which stops the
+ * worker from starting at all. Clearing ScriptCache + Database forces the
+ * extension (and the app) to re-register their workers from disk on the next
+ * launch. The app's CacheStorage and saved auth (cookies, localStorage) are
+ * left intact, so profiling behavior is unchanged — only stale extension code
+ * is evicted.
+ */
+function purgeExtensionServiceWorkerCache(userDataDir: string): void {
+    if (!userDataDir) {
+        // Empty userDataDir => Playwright uses a throwaway temp profile that
+        // never persists a cache, so there is nothing to purge.
+        return;
+    }
+    const swRoots = [path.join(userDataDir, 'Default', 'Service Worker'), path.join(userDataDir, 'Service Worker')];
+    for (const root of swRoots) {
+        for (const sub of ['ScriptCache', 'Database']) {
+            try {
+                fs.rmSync(path.join(root, sub), {recursive: true, force: true});
+            } catch {
+                // Best-effort: an absent or locked cache is fine — the worker re-registers regardless.
+            }
+        }
+    }
+}
+
 async function waitForProfilerReady(page: Page, timeoutMs = 10000): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -153,6 +190,7 @@ export type LaunchProfilingContextOptions = LaunchPersistentContextOptions;
  */
 export async function launchProfilingContext(userDataDir: string, overrides: LaunchProfilingContextOptions = {}): Promise<BrowserContext> {
     const extensionDir = resolveExtensionDir();
+    purgeExtensionServiceWorkerCache(userDataDir);
     const {args: overrideArgs, ignoreHTTPSErrors, channel, ...rest} = overrides;
     const context = await chromium.launchPersistentContext(userDataDir, {
         ignoreHTTPSErrors: ignoreHTTPSErrors ?? true,
