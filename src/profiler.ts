@@ -80,11 +80,19 @@ function purgeExtensionServiceWorkerCache(userDataDir: string): void {
 async function waitForProfilerReady(page: Page, timeoutMs = 10000): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-        const ready = await page.evaluate(async () => {
-            const profiler = (window as any).__REACT_PROFILER__;
-            if (!profiler) return false;
-            return profiler.isReady();
-        });
+        const ready = await page
+            .evaluate(async () => {
+                const profiler = (window as any).__REACT_PROFILER__;
+                if (!profiler) return false;
+                // Bound the command. On a cold start the service-worker command
+                // channel may not be wired yet, so isReady() — which resolves only
+                // when the SW replies — can hang indefinitely. Without this race the
+                // awaited evaluate never returns, the deadline below is never
+                // re-checked, and the caller hangs until the Playwright test
+                // timeout closes the page.
+                return Promise.race([profiler.isReady(), new Promise((resolve) => setTimeout(() => resolve(false), 1000))]);
+            })
+            .catch(() => false);
         if (ready) return true;
         await page.waitForTimeout(200);
     }
@@ -212,11 +220,16 @@ export function createProfiler(page: Page, config?: ProfilerConfig): ReactProfil
         },
 
         async isReady(): Promise<boolean> {
-            return page.evaluate(async () => {
-                const profiler = (window as any).__REACT_PROFILER__;
-                if (!profiler) return false;
-                return profiler.isReady();
-            });
+            return page
+                .evaluate(async () => {
+                    const profiler = (window as any).__REACT_PROFILER__;
+                    if (!profiler) return false;
+                    // Bounded: the service-worker command can hang before the
+                    // bridge is wired (cold start), and an unresolved in-page
+                    // promise would hang the awaiting evaluate indefinitely.
+                    return Promise.race([profiler.isReady(), new Promise((resolve) => setTimeout(() => resolve(false), 1000))]);
+                })
+                .catch(() => false);
         },
 
         async exportProfile(): Promise<ProfileExport | null> {
