@@ -7,13 +7,15 @@ Playwright extension for automated React DevTools profiling. Captures React rend
 Uses the same multi-process architecture as the real React DevTools extension:
 
 ```
-MAIN world (page thread):     installHook.js + backend.js
-                               Agent, initBackend, Bridge via postMessage
+MAIN world (page thread):     backend.js
+                               react-devtools-core: hook + Agent + Bridge via postMessage
 ISOLATED world (page thread):  proxy.js
                                Relays postMessage <-> chrome.runtime port
 Service Worker (off thread):   frontend.js
-                               Store, ProfilerStore, prepareProfilingDataExport
+                               react-devtools-inline: Store, ProfilerStore + prepareProfilingDataExport
 ```
+
+The extension is built from the published `react-devtools-core` and `react-devtools-inline` npm packages (pinned to a stable release), so exported profiles import into a same-versioned official React DevTools extension with zero mapping.
 
 Key benefits:
 - **Real DevTools pipeline** — Store + ProfilerStore produce identical export format as DevTools "Export" button
@@ -35,12 +37,11 @@ Both `dist/` (compiled TypeScript) and `devtools-extension/` (built Chrome exten
 
 > **Rebuilding from source (development only):**
 > - **TypeScript**: `npm run build` recompiles `src/*.ts` into `dist/`.
-> - **DevTools extension**: if you modify `src/backend.js` or `src/frontend.js`, or want to upgrade to a newer React DevTools version:
+> - **DevTools extension**: if you modify `src/backend.js` or `src/frontend.js`, or want to upgrade to a newer React DevTools version (bump `react-devtools-core` / `react-devtools-inline` in `package.json`):
 >   ```bash
->   git submodule update --init react-source
 >   npm run build-devtools
 >   ```
->   This rebuilds `installHook.js`, `backend.js`, and `frontend.js` from `react-source` into `devtools-extension/`.
+>   This bundles `backend.js` and `frontend.js` from the npm `react-devtools-*` packages into `devtools-extension/` with esbuild (no submodule, no native React build). To import the resulting profiles into the official extension without errors, that extension must be the **same major/minor version** as the pinned packages.
 
 ### 2. Use in your project
 
@@ -155,7 +156,7 @@ console.log(formatAnalysis(analysis));
 
 ## How It Works
 
-1. **Extension loading** — Chrome loads the DevTools extension via `--load-extension`. At `document_start`, `installHook.js` installs `__REACT_DEVTOOLS_GLOBAL_HOOK__` and `backend.js` creates an Agent connected to the hook.
+1. **Extension loading** — Chrome loads the DevTools extension via `--load-extension`. At `document_start`, `backend.js` calls `react-devtools-core`'s `initialize()` to install `__REACT_DEVTOOLS_GLOBAL_HOOK__` (seeded with the default component filters), then `connectWithCustomMessagingProtocol()` to wire an Agent + Bridge over the postMessage transport.
 
 2. **Bridge transport** — `backend.js` (MAIN world) communicates with `frontend.js` (service worker) through `proxy.js` (ISOLATED world). Messages flow via `window.postMessage` -> `chrome.runtime` port.
 
@@ -234,18 +235,18 @@ playwright-react-profiler/
 │   ├── profiler.ts       # Core profiling logic
 │   ├── analyze.ts        # Profile analysis utilities
 │   ├── types.ts          # TypeScript types
-│   ├── backend.js        # Extension source: MAIN world (Agent, Bridge)
-│   └── frontend.js       # Extension source: service worker (Store, ProfilerStore)
+│   ├── backend.js        # Extension entry: MAIN world (react-devtools-core)
+│   ├── frontend.js       # Extension entry: service worker (react-devtools-inline)
+│   └── vendor/
+│       └── prepareProfilingDataExport.js  # Vendored export transform (not re-exported by npm)
 ├── devtools-extension/   # Pre-built Chrome extension (committed)
 │   ├── manifest.json     # Manifest V3 with service worker
 │   ├── proxy.js          # ISOLATED world relay (plain JS)
-│   ├── installHook.js    # Built from react-source (MIT, Meta)
-│   ├── backend.js        # Built from react-source (MIT, Meta)
-│   ├── frontend.js       # Built from react-source (MIT, Meta)
-│   └── LICENSE           # Meta/React MIT license for built files
-├── react-source/         # Git submodule (facebook/react) — dev only
+│   ├── backend.js        # Bundled from react-devtools-core (MIT, Meta)
+│   ├── frontend.js       # Bundled from react-devtools-inline (MIT, Meta)
+│   └── LICENSE           # Meta/React MIT license for bundled files
 ├── scripts/
-│   └── build-devtools.sh # Rebuilds extension from react-source
+│   └── build-devtools.mjs # Bundles the extension from npm react-devtools-* via esbuild
 └── dist/                 # Compiled TypeScript output (committed)
 ```
 
@@ -253,4 +254,4 @@ playwright-react-profiler/
 
 MIT
 
-The pre-built DevTools extension files (`devtools-extension/installHook.js`, `backend.js`, `frontend.js`) contain code from [facebook/react](https://github.com/facebook/react), licensed under MIT by Meta Platforms, Inc. See `devtools-extension/LICENSE` for details.
+The pre-built DevTools extension files (`devtools-extension/backend.js`, `frontend.js`) are bundled from the [react-devtools-core](https://www.npmjs.com/package/react-devtools-core) and [react-devtools-inline](https://www.npmjs.com/package/react-devtools-inline) npm packages (from [facebook/react](https://github.com/facebook/react)), licensed under MIT by Meta Platforms, Inc. See `devtools-extension/LICENSE` for details.

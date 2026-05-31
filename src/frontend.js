@@ -1,24 +1,29 @@
 /**
  * Frontend service worker (background script).
  *
- * Runs Store + ProfilerStore OFF the main thread, in Chrome's extension
- * service worker process. This matches real DevTools architecture where
- * the frontend runs in a separate process from the page.
+ * Runs Store + ProfilerStore OFF the page main thread, in Chrome's extension
+ * service-worker process. This matches real DevTools architecture, where the
+ * frontend lives in a different process from the page.
  *
- * Key benefit: Store operations processing, element tracking, and profiling
- * data collection happen without interfering with React's scheduler on the
- * main thread — producing more natural commit batching patterns.
+ * Built from the published `react-devtools-inline` package: createBridge +
+ * createStore give the same react-devtools-shared Store/ProfilerStore that the
+ * official extension uses, so operations recorded here and the export produced
+ * by the vendored prepareProfilingDataExport import into a same-versioned
+ * (7.0.x) React DevTools extension with zero mapping.
  *
- * Communicates with backend.js (MAIN world) via proxy.js (ISOLATED world)
- * using chrome.runtime port messaging.
+ * A service worker has no DOM, but the inline frontend bundle injects its
+ * stylesheet at module-load time. scripts/build-devtools.mjs prepends a minimal
+ * DOM stub via the esbuild banner so the bundle loads; the DevTools UI is never
+ * mounted (we only use Store/ProfilerStore), so the stub is never otherwise hit.
+ *
+ * Communicates with backend.js (MAIN world) via proxy.js (ISOLATED world) using
+ * chrome.runtime port messaging.
  */
 
-import Bridge from 'react-devtools-shared/src/bridge';
-import Store from 'react-devtools-shared/src/devtools/store';
-import ProfilerStore from 'react-devtools-shared/src/devtools/ProfilerStore';
-import {prepareProfilingDataExport} from 'react-devtools-shared/src/devtools/views/Profiler/utils';
+import {createBridge, createStore} from 'react-devtools-inline/frontend';
+import {prepareProfilingDataExport} from './vendor/prepareProfilingDataExport';
 
-// Per-tab profiling state
+// Per-tab profiling state.
 const tabState = new Map();
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -31,12 +36,12 @@ chrome.runtime.onConnect.addListener((port) => {
     return;
   }
 
-  // Clean up previous state for this tab (page reload)
+  // Clean up previous state for this tab (page reload).
   tabState.delete(tabId);
 
   // ── Frontend Bridge ──
-  // Messages flow: service worker ↔ proxy.js ↔ backend.js (MAIN world)
-  const bridge = new Bridge({
+  // Messages flow: service worker ↔ proxy.js ↔ backend.js (MAIN world).
+  const wall = {
     listen(fn) {
       const handler = (message) => {
         if (message.type === 'bridge') {
@@ -46,28 +51,31 @@ chrome.runtime.onConnect.addListener((port) => {
       port.onMessage.addListener(handler);
       return () => port.onMessage.removeListener(handler);
     },
-    send(event, payload, transferable) {
+    send(event, payload) {
       try {
         port.postMessage({type: 'bridge', payload: {event, payload}});
       } catch (e) {
-        // Port disconnected — page navigated away or closed
+        // Port disconnected — page navigated away or closed.
       }
     },
-  });
+  };
+
+  const bridge = createBridge(null, wall);
 
   // ── Store + ProfilerStore ──
-  const store = new Store(bridge, {
+  const store = createStore(bridge, {
     supportsReloadAndProfile: false,
     supportsTimeline: false,
     supportsTraceUpdates: false,
+    checkBridgeProtocolCompatibility: false,
   });
 
-  const profilerStore = new ProfilerStore(bridge, store, false);
+  const profilerStore = store.profilerStore;
 
   // ── Shadow element map ──
-  // Store removes unmounted elements from _idToElement. We keep a copy of
-  // every element ever seen so that fibers created and destroyed during
-  // profiling can still be resolved by name in the export.
+  // Store removes unmounted elements from _idToElement. We keep a copy of every
+  // element ever seen so fibers created and destroyed during profiling can still
+  // be resolved by name in the export.
   const allElementsEverSeen = new Map();
   const origSet = store._idToElement.set.bind(store._idToElement);
   store._idToElement.set = function (id, element) {
@@ -87,18 +95,18 @@ chrome.runtime.onConnect.addListener((port) => {
   tabState.set(tabId, state);
 
   // ── Command handler ──
-  // Receives commands from page API via proxy, executes on Store/ProfilerStore.
+  // Receives commands from the page API via proxy, executes on Store/ProfilerStore.
   port.onMessage.addListener((message) => {
     if (message.type !== 'command') {
       return;
     }
-    const {id, action, args} = message.payload;
+    const {id, action} = message.payload;
 
     function respond(result) {
       try {
         port.postMessage({type: 'response', payload: {id, result}});
       } catch (e) {
-        // Port disconnected
+        // Port disconnected.
       }
     }
 
@@ -127,7 +135,7 @@ chrome.runtime.onConnect.addListener((port) => {
         profilerStore.addListener('isProcessingData', onProcessing);
         profilerStore.stopProfiling();
 
-        // Safety timeout — ensure we always respond
+        // Safety timeout — ensure we always respond.
         setTimeout(() => {
           profilerStore.removeListener('profilingData', onData);
           profilerStore.removeListener('isProcessingData', onProcessing);
@@ -145,19 +153,15 @@ chrome.runtime.onConnect.addListener((port) => {
           }
 
           // Enrich snapshots with elements created during profiling.
-          // ProfilerStore only snapshots elements at profiling START.
-          // Elements mounted DURING profiling exist in the shadow map.
+          // ProfilerStore only snapshots elements at profiling START; elements
+          // mounted DURING profiling exist in the shadow map.
           data.dataForRoots.forEach((rootData) => {
             const snapshotMap = rootData.snapshots;
             const allFiberIds = new Set();
 
             rootData.commitData.forEach((commit) => {
-              commit.fiberActualDurations.forEach((_duration, fiberId) =>
-                allFiberIds.add(fiberId),
-              );
-              commit.fiberSelfDurations.forEach((_duration, fiberId) =>
-                allFiberIds.add(fiberId),
-              );
+              commit.fiberActualDurations.forEach((_duration, fiberId) => allFiberIds.add(fiberId));
+              commit.fiberSelfDurations.forEach((_duration, fiberId) => allFiberIds.add(fiberId));
             });
 
             allFiberIds.forEach((fiberId) => {
@@ -203,7 +207,7 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   });
 
-  // Clean up on disconnect (page closed or navigated away)
+  // Clean up on disconnect (page closed or navigated away).
   port.onDisconnect.addListener(() => {
     tabState.delete(tabId);
   });

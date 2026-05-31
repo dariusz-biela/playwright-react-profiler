@@ -7,16 +7,24 @@
   "license": "MIT",
   "scripts": {
     "build": "tsc",
-    "build-devtools": "bash scripts/build-devtools.sh",
+    "build-devtools": "node scripts/build-devtools.mjs",
     "setup": "npm run build-devtools && npm run build",
     "analyze": "ts-node src/analyze.ts"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.30.0"
   },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-is": "^19.0.0",
+    "react-devtools-core": "7.0.1",
+    "react-devtools-inline": "7.0.1"
+  },
   "devDependencies": {
     "typescript": "^5.0.0",
-    "ts-node": "^10.9.0"
+    "ts-node": "^10.9.0",
+    "esbuild": "^0.24.0"
   },
   "files": [
     "dist",

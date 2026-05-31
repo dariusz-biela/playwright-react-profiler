@@ -5,14 +5,22 @@
   "version": "3.0.0",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["installHook.js", "backend.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "backend.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["proxy.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "proxy.js"
+      ],
       "run_at": "document_start",
       "world": "ISOLATED"
     }
